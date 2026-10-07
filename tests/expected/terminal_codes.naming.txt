@@ -1,0 +1,2 @@
+9: Start  [VAR_INPUT, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter | suggestion: ibStart
+17: START  [VAR, BOOL] | expected prefix 'sb' or 'sx' followed by a capital letter | suggestion: sbStart

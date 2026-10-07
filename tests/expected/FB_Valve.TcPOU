@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_Valve" Id="{11111111-2222-3333-4444-555555555555}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Valve
+VAR_INPUT
+    R       : Bool;
+    nSpeed  : Int;  // speed
+END_VAR
+VAR
+    sTimer  : TON;
+    sbDone  : Bool;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[If R Then
+    sTimer
+        (
+         IN := True,
+         PT := T#5S,
+         Q  => sbDone
+         );
+End_If]]></ST>
+    </Implementation>
+    <Method Name="M_Reset" Id="{aaaaaaaa-2222-3333-4444-555555555555}">
+      <Declaration><![CDATA[METHOD M_Reset : Bool
+VAR_INPUT
+    bForce  : Bool;
+END_VAR
+VAR
+    x       : Int;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[x           := 0;
+M_Reset     := True;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Valve">
+      <LineId Id="3" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,5 @@
+6: START_CMD  [VAR_INPUT] | not a valid IEC PAS 63131 terminal code: '_' is not a valid succeeding character | valid: A B C D E F G H I L M N O P Q R S T U V W and digits 1-9
+7: BZ  [VAR_INPUT] | not a valid IEC PAS 63131 terminal code: 'Z' is not a valid succeeding character | valid: A B C D E F G H I L M N O P Q R S T U V W and digits 1-9
+8: QA  [VAR_INPUT] | not a valid IEC PAS 63131 terminal code: 'Q' is not a valid first letter | valid first letters: A B F L P R S W X Y
+9: Start  [VAR_INPUT, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter | suggestion: ibStart
+17: START  [VAR, BOOL] | expected prefix 'sb' or 'sx' followed by a capital letter | suggestion: sbStart

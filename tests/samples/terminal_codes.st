@@ -1,0 +1,19 @@
+FUNCTION_BLOCK FB_Valve
+VAR_INPUT
+    R : BOOL;
+    BA1 : BOOL;
+    XE : BOOL;
+    START_CMD : BOOL;
+    BZ : BOOL;
+    QA : BOOL;
+    Start : BOOL;
+    ibReset : BOOL;
+END_VAR
+VAR_OUTPUT
+    YH : BOOL;
+    qbOpen : BOOL;
+END_VAR
+VAR
+    START : BOOL;
+END_VAR
+END_FUNCTION_BLOCK

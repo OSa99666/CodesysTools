@@ -1,0 +1,14 @@
+[
+  {
+    "Name": "ST Format",
+    "Desc": "Format all Structured Text objects and check naming",
+    "Icon": "ST_Format.ico",
+    "Path": "ST_Format.py"
+  },
+  {
+    "Name": "ST Check names",
+    "Desc": "Check Hungarian notation in all ST declarations",
+    "Icon": "ST_CheckNames.ico",
+    "Path": "ST_CheckNames.py"
+  }
+]

@@ -1,0 +1,24 @@
+FUNCTION_BLOCK FB_Valve
+VAR_INPUT
+    R                   : Bool;
+    nSpeed              : Int;  // speed
+END_VAR
+VAR
+    srTemperatureActual : LReal;
+END_VAR
+----
+If R Then
+    srTemperatureActual := 0.0;
+End_If
+x                       := 1;
+----
+VAR_GLOBAL
+    gbAlarm : Bool;
+    bBad    : Bool;
+END_VAR
+----
+I ST Format: 2 of 2 ST objects reformatted.
+W Naming: FB_Valve, decl. line 4: nSpeed  [VAR_INPUT, INT] - expected prefix 'ii' followed by a capital letter; suggestion: iiSpeed
+W Naming: FB_Valve, decl. line 7: srTemperatureActual  [VAR, LREAL] - expected prefix 'slr' followed by a capital letter; suggestion: slrTemperatureActual
+W Naming: GVL, decl. line 3: bBad  [VAR_GLOBAL, BOOL] - expected prefix 'gb' or 'gx' followed by a capital letter; suggestion: gbBad
+I ST naming: 3 problem(s)
