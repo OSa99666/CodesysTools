@@ -131,7 +131,7 @@ def _confirm(system, text):
         return True
 
 
-def run_format(projects, system, Severity, check_after=True):
+def run_format(projects, system, Severity, check_after=False):
     proj = projects.primary
     if proj is None:
         _write(system, Severity.Error, "ST Format: no project is open.")
@@ -150,7 +150,7 @@ def run_format(projects, system, Severity, check_after=True):
             _write(system, Severity.Error, "ST Format: %s: %s" % (_path(obj), e), obj)
     _write(system, Severity.Information,
            "ST Format: %d of %d ST objects reformatted." % (n_changed, n_obj))
-    if check_after and o.get("check_naming_after_format", True):
+    if check_after:
         run_check(projects, system, Severity)
 
 

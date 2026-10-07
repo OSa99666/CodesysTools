@@ -10,7 +10,7 @@ small adapter, `st_codesys.py`, and two toolbar buttons.
 |---|---|
 | `StructuredText_Format.py` | Formatter + naming check (same file as in Notepad++; keep the copies identical) |
 | `st_codesys.py` | Adapter: walks the project, reads/writes declaration + implementation |
-| `ST_Format.py` / `ST_Format.ico` | Toolbar button: format all ST objects, then check naming |
+| `ST_Format.py` / `ST_Format.ico` | Toolbar button: format all ST objects (no naming check; use ST_CheckNames) |
 | `ST_CheckNames.py` / `ST_CheckNames.ico` | Toolbar button: naming check only |
 | `config.json` | Toolbar button definitions |
 

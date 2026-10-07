@@ -1,4 +1,4 @@
-# CODESYS toolbar script: format all ST objects, then check naming.
+# CODESYS toolbar script: format all ST objects (naming check is the separate ST_CheckNames button).
 from __future__ import print_function
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
