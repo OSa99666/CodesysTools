@@ -140,12 +140,20 @@ def run_format(projects, system, Severity, check_after=False):
                             "Tip: save or commit the project first." % proj.path):
         return
     o = _opts()
+    items = list(iter_st_objects(proj))
+    total = len(items)
+    _write(system, Severity.Information, "ST Format: started, %d ST objects found..." % total)
     n_obj = n_changed = 0
-    for obj, has_decl, has_impl in iter_st_objects(proj):
+    for obj, has_decl, has_impl in items:
         n_obj += 1
         try:
             if format_object(obj, has_decl, has_impl, o):
                 n_changed += 1
+                _write(system, Severity.Information,
+                       "ST Format: [%d/%d] formatted %s" % (n_obj, total, _path(obj)), obj)
+            elif n_obj % 25 == 0:
+                _write(system, Severity.Information,
+                       "ST Format: [%d/%d] ..." % (n_obj, total))
         except Exception as e:
             _write(system, Severity.Error, "ST Format: %s: %s" % (_path(obj), e), obj)
     _write(system, Severity.Information,

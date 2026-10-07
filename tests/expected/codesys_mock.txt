@@ -17,4 +17,7 @@ VAR_GLOBAL
     bBad    : Bool;
 END_VAR
 ----
+I ST Format: started, 2 ST objects found...
+I ST Format: [1/2] formatted FB_Valve
+I ST Format: [2/2] formatted GVL
 I ST Format: 2 of 2 ST objects reformatted.
