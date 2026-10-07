@@ -7,6 +7,8 @@ buttons) and **TwinCAT 3 XAE** (External Tools working on .TcPOU/.TcDUT/.TcGVL/.
 
 Originally developed in a claude.ai chat; this file captures every decision made there.
 
+Repository: https://github.com/OSa99666/CodesysTools (branch `master`, remote `origin`).
+
 ## Status (confirmed by the user)
 
 - Notepad++: highlighting, formatting, naming underlines + hover tips all work.
