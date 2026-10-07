@@ -91,6 +91,8 @@ Layout
   ```
   `(` one level in from the name (`call_paren_indent`), parameters and `);` one extra space
   (`call_param_offset`). Positional-only calls and calls inside expressions stay inline.
+- Typed declarations with named init (`sV : tT(a := 1, b := 2);` / `: tT := (a := 1);`) in VAR/STRUCT
+  use the same expanded layout (`decl_init_expand`); their `:=` join the file-wide alignment.
 
 ## Naming check spec (Hungarian notation)
 

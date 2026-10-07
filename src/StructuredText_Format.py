@@ -81,6 +81,9 @@ OPTIONS = {
     "call_expand_min_params": 1,     # expand only calls with at least this many parameters
     "call_paren_indent": 1,          # indent levels of "(" relative to the call name
     "call_param_offset": 1,          # extra spaces of parameters and ");" relative to "("
+    # Declarations with named initialisation, e.g.  sValve : tValve(bOpen := True, iMax := 10);
+    # are laid out like calls (needs call_style "expanded"); ':' and ':=' stay column aligned.
+    "decl_init_expand": True,
     "max_blank_lines": 1,            # collapse runs of blank lines to this many
     "ensure_final_newline": True,
 }
@@ -631,7 +634,9 @@ def _build_line(tokens, o, stack, paren):
         line.decl_gap = int(o["decl_min_gap"])
         if comment and o["decl_comment_style"] == "//":
             line.comment = _to_line_comment(comment)
-    elif (assign_pos is not None and not in_decl_ctx and label_colon is None
+    elif (assign_pos is not None
+          and (not in_decl_ctx or (start_paren and start_paren[-1][0] == "call_open"))
+          and label_colon is None
           and decl_colon is None and not multiline_comment and code_toks
           and code_toks[0].kind == "ident"
           and (code_toks[0].v.upper() not in RESERVED or code_toks[0].v.upper() in ("THIS", "SUPER"))):
@@ -802,6 +807,50 @@ def _match_call(toks, i, o):
         k += 1
     if k >= n or not (toks[k].kind == "op" and toks[k].v == "("):
         return None
+    r = _expand_paren(toks, k, o)
+    if r is None:
+        return None
+    body, j = r
+    return _finish_expanded(toks, list(name) + body, j)
+
+
+def _match_decl(toks, i, o):
+    """At toks[i] (first identifier of a declaration) try to match
+    name : Type(a := 1, ...)[;]  or  name : Type := (a := 1, ...)[;].
+    Returns (new_tokens, next_index, last_token) or None."""
+    n, k, colon, depth = len(toks), i, False, 0
+    while k < n:
+        t = toks[k]
+        if t.kind in ("lcomment", "bcomment", "pragma", "rname"):
+            return None
+        if t.kind == "op":
+            if t.v == ";":
+                return None
+            if t.v == ":" and depth == 0:
+                colon = True
+            elif t.v == "[":
+                depth += 1
+            elif t.v == "]":
+                depth -= 1
+            elif t.v == "(" and depth == 0:
+                break
+        k += 1
+    if k >= n or not colon:
+        return None
+    r = _expand_paren(toks, k, o)
+    if r is None:
+        return None
+    body, j = r
+    head = [t for t in toks[i:k] if t.kind != "nl"]
+    while head and head[-1].kind == "ws":
+        head.pop()
+    return _finish_expanded(toks, head + body, j)
+
+
+def _expand_paren(toks, k, o):
+    """toks[k] is '('. If its content has named parameters return
+    ([nl, '(', nl, params..., ')'], index_of_closing_paren), else None."""
+    n = len(toks)
     # matching ')'
     depth, j = 0, k
     while j < n:
@@ -865,11 +914,17 @@ def _match_call(toks, i, o):
     if len(segs) < int(o.get("call_expand_min_params", 1)):
         return None
     nl = Tok("nl", "\n")
-    out = list(name) + [nl, Tok("op", "(", "call_open"), nl]
+    out = [nl, Tok("op", "(", "call_open"), nl]
     for sg in segs:
         out.extend(sg)
         out.append(nl)
     out.append(Tok("op", ")", "call_close"))
+    return out, j
+
+
+def _finish_expanded(toks, out, j):
+    """Append an optional ';' after the closing paren at toks[j]; returns (out, next_index, last)."""
+    n = len(toks)
     last = toks[j]
     j += 1
     m = j
@@ -884,20 +939,38 @@ def _match_call(toks, i, o):
 
 def _expand_calls(toks, o):
     out, i, n = [], 0, len(toks)
-    prev, line_start = None, True
+    prev, line_start, decl_start = None, True, True
+    var_depth = 0          # > 0 inside VAR ... END_VAR / STRUCT ... END_STRUCT
     while i < n:
         t = toks[i]
         if t.kind == "nl":
             out.append(t)
-            line_start = True
+            line_start = decl_start = True
             i += 1
             continue
         if t.kind in _NON_CODE:
             out.append(t)
             if t.kind != "ws":
                 line_start = False
+            if t.kind not in ("ws", "pragma"):
+                decl_start = False
             i += 1
             continue
+        if t.kind == "ident":
+            u = t.v.upper()
+            if u in VAR_KINDS or u in ("STRUCT", "UNION"):
+                var_depth += 1
+            elif u in ("END_VAR", "END_STRUCT", "END_UNION"):
+                var_depth = max(0, var_depth - 1)
+        if (var_depth and o.get("decl_init_expand", True) and decl_start
+                and t.kind == "ident" and t.v.upper() not in RESERVED):
+            m = _match_decl(toks, i, o)
+            if m:
+                new, i, prev = m
+                out.extend(new)
+                line_start = decl_start = False
+                continue
+        decl_start = False
         if (line_start and t.kind == "ident" and t.v.upper() not in RESERVED
                 and _stmt_boundary(prev)):
             m = _match_call(toks, i, o)

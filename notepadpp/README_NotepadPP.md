@@ -67,6 +67,7 @@ Edit the `OPTIONS` dictionary at the top of the script. Columns are 1-based, the
 | `call_expand_min_params` | `1` | Expand only calls with at least this many parameters |
 | `call_paren_indent` | `1` | Indent levels of `(` relative to the call name |
 | `call_param_offset` | `1` | Extra spaces of the parameters and `);` relative to `(` |
+| `decl_init_expand` | `True` | Declarations with named initialisation (`sV : tValve(bOpen := TRUE, ...);` or `: tT := (a := 1, ...)`) are laid out like calls, `:` and `:=` aligned |
 | `max_blank_lines` | `1` | Collapse multiple blank lines |
 | `ensure_final_newline` | `True` | Newline at end of file |
 
