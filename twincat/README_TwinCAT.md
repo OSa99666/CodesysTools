@@ -16,6 +16,20 @@ Requires Python 3 for Windows (standard library only, no extra packages).
 
 ## Integration in TwinCAT XAE: External Tools
 
+### Automatic install (recommended)
+
+Close XAE, then run in this folder:
+
+```
+powershell -ExecutionPolicy Bypass -File Install_XAE_Tools.ps1
+```
+
+It copies `st_twincat.py` + `StructuredText_Format.py` to `%LOCALAPPDATA%\STTools` and adds the
+three tools below (prefix `ST:`) to **Tools** in XAE; other External Tools are kept. Re-run after
+updating the scripts; `-Python <path>` selects the interpreter, `-Uninstall` removes the entries.
+
+### Manual install
+
 **Tools → External Tools… → Add**, three times:
 
 | Title | Command | Arguments | Initial directory |
