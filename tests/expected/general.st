@@ -40,7 +40,7 @@ Else
 End_Case
 
 For i := 1 To 10 By 1 Do
-    aBuffer[i]         := INT_TO_REAL(i) * 1.5E3;
+    aBuffer[i]         := Int_To_Real(i) * 1.5E3;
 End_For
 Repeat
     i                  := i + 1;

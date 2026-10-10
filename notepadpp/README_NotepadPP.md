@@ -47,6 +47,7 @@ Edit the `OPTIONS` dictionary at the top of the script. Columns are 1-based, the
 | `decl_keyword_case` | `"upper"` | VAR_INPUT, END_VAR, FUNCTION_BLOCK, STRUCT, ARRAY… |
 | `region_case` | `"upper"` | REGION / END_REGION |
 | `type_case` | `"pascal"` | `Bool`, `Int`, `LInt`, `LReal`, `LTime`, `DWord`… |
+| `function_case` | `"pascal"` | standard functions when called: `Abs`, `Sqrt`, `Sin`, `Limit`, `Int_To_Real`… (list: `FUNCTIONS`) |
 | `normalize_spacing` | `True` | Rewrite spaces between tokens (off = only re-indent) |
 | `space_around_operators` | `True` | `a := b + c` vs `a:=b+c` |
 | `space_after_comma` | `True` | `f(a, b)` vs `f(a,b)` |

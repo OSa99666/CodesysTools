@@ -27,6 +27,7 @@ OPTIONS = {
     "decl_keyword_case": "upper",    # VAR_INPUT END_VAR FUNCTION_BLOCK STRUCT ARRAY CONSTANT ...
     "region_case": "upper",          # REGION / END_REGION
     "type_case": "pascal",           # Bool Int LInt LReal LTime DWord ...
+    "function_case": "pascal",       # standard functions: Abs Sqrt Sin Cos Limit Int_To_Real ... (see FUNCTIONS)
 
     "normalize_spacing": True,       # rewrite spaces between tokens
     "space_around_operators": True,  # a := b + c   vs   a:=b+c
@@ -191,6 +192,13 @@ TYPES = _set("BOOL BYTE WORD DWORD LWORD SINT INT DINT LINT USINT UINT UDINT ULI
              "DT LDT STRING WSTRING CHAR WCHAR ANY ANY_NUM ANY_INT ANY_REAL ANY_BIT ANY_STRING "
              "ANY_DATE XWORD XINT UXINT ARRAY")
 KW_REGION = _set("REGION END_REGION")
+# Standard IEC functions: re-cased (option function_case) when used as a call, i.e. followed by '('.
+# <TYPE>_TO_<TYPE> and TO_<TYPE> conversions are recognised automatically.
+FUNCTIONS = _set("ABS SQRT LN LOG EXP EXPT SIN COS TAN ASIN ACOS ATAN ATAN2 TRUNC "
+                 "ADD SUB MUL DIV MOVE SHL SHR ROL ROR SEL MAX MIN LIMIT MUX "
+                 "GT GE EQ LE LT NE LEN LEFT RIGHT MID CONCAT INSERT DELETE REPLACE FIND "
+                 "SIZEOF ADR BITADR")
+RE_CONVERSION = re.compile(r"^(?:([A-Z_0-9]+)_TO_|TO_|TRUNC_)([A-Z_0-9]+)$")
 KEYWORDS = KW_CONTROL | KW_DECL | KW_OPS | KW_CONST | KW_REGION
 RESERVED = KEYWORDS | TYPES
 
@@ -421,7 +429,17 @@ def _apply_case(word, mode):
     return word
 
 
-def _display(t, o):
+def _is_function(name, nxt):
+    if nxt is None or nxt.v != "(":
+        return False
+    u = name.upper()
+    if u in FUNCTIONS:
+        return True
+    m = RE_CONVERSION.match(u)
+    return bool(m) and m.group(2) in TYPES and (m.group(1) is None or m.group(1) in TYPES)
+
+
+def _display(t, o, nxt=None):
     if t.kind == "ident":
         u = t.v.upper()
         if u in KW_REGION:
@@ -432,6 +450,8 @@ def _display(t, o):
             return _apply_case(t.v, o["keyword_case"])
         if u in TYPES:
             return _apply_case(t.v, o["type_case"])
+        if _is_function(t.v, nxt):
+            return _apply_case(t.v, o["function_case"])
     elif t.kind == "literal":
         # typed literal: only the type prefix before '#' follows type_case (LTIME#1s -> LTime#1s)
         pre, sep, rest = t.v.partition("#")
@@ -616,7 +636,7 @@ def _build_line(tokens, o, stack, paren):
             if t is assign_tok:
                 assign_pos = len("".join(parts))
             parts.append(sp)
-        parts.append(_display(t, o))
+        parts.append(_display(t, o, sig[k + 1] if k + 1 < len(sig) else None))
         prev_unary = _is_unary(prev, t)
         prev = t
     code = "".join(parts)
