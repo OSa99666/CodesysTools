@@ -432,6 +432,11 @@ def _display(t, o):
             return _apply_case(t.v, o["keyword_case"])
         if u in TYPES:
             return _apply_case(t.v, o["type_case"])
+    elif t.kind == "literal":
+        # typed literal: only the type prefix before '#' follows type_case (LTIME#1s -> LTime#1s)
+        pre, sep, rest = t.v.partition("#")
+        if sep and pre.upper() in TYPES:
+            return _apply_case(pre, o["type_case"]) + sep + rest
     return t.v
 
 
