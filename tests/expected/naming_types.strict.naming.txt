@@ -1,0 +1,2 @@
+6: Other  [VAR, complex type] | expected prefix 's' followed by a capital letter or digit | suggestion: sOther
+7: Flag  [VAR, BOOL] | expected prefix 'sb' or 'sx' followed by a capital letter or digit | suggestion: sbFlag

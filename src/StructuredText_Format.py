@@ -62,6 +62,15 @@ OPTIONS = {
     "naming_indicator_style": "thick",   # "thick" | "plain" | "squiggle" underline, "box" (filled), "outline"
     "naming_indicator_color": (255, 140, 0),  # orange (R, G, B)
     "naming_ignore": [],             # exact names never flagged, e.g. ["i", "j"]
+    # Names that are one of these prefixes, or start with it followed by a capital letter,
+    # digit or '_', are never flagged (k, k_1, kMaxSize, vSpeed, m2). Case sensitive;
+    # "mode" is NOT exempt by "m".
+    "naming_ignore_prefixes": ["k", "v", "m"],
+    # Declarations of these data types are never checked (case-insensitive; the element
+    # type for ARRAY OF). Standard or own types, e.g. ["TOD", "DT", "ST_Data", "FB_Timer"].
+    "naming_ignore_types": [],
+    # False = members of TYPE ... STRUCT / UNION declarations are not checked at all.
+    "naming_check_type_members": True,
     "naming_report_console": False,  # also list problems in the PythonScript console
     "naming_indicator_id": 13,       # Scintilla indicator number (change if another plugin uses 13)
     # VAR_INPUT / VAR_OUTPUT / VAR_IN_OUT: names in ALL CAPITALS always pass the
@@ -1079,7 +1088,7 @@ def _known_prefixes():
 def _suggest(name, prefix):
     if _ALLCAPS.match(name):
         return prefix + "".join(w.capitalize() for w in name.split("_") if w)
-    m = re.match(r"^([a-z]+)([A-Z].*)$", name)
+    m = re.match(r"^([a-z]+)([A-Z0-9].*)$", name)
     if m and m.group(1) in _known_prefixes():
         core = m.group(2)
     else:
@@ -1160,12 +1169,23 @@ def _memory_prefixes(section, flags, pou, addr, in_struct):
     return None, section
 
 
+def _has_ignored_prefix(name, prefix):
+    """name is the prefix alone, or the prefix followed by a capital, digit or '_'."""
+    if not name.startswith(prefix):
+        return False
+    rest = name[len(prefix):]
+    return not rest or rest[0].isupper() or rest[0].isdigit() or rest[0] == "_"
+
+
 def check_names(text, options=None):
     """Return a list of (char_start, char_length, message) for badly named declarations."""
     o = dict(OPTIONS)
     if options:
         o.update(options)
     ignore = set(o.get("naming_ignore") or [])
+    ign_prefixes = tuple(o.get("naming_ignore_prefixes") or ())
+    check_members = o.get("naming_check_type_members", True)
+    ign_types = set(x.upper() for x in (o.get("naming_ignore_types") or []))
     toks = tokenize(text)
     pos = 0
     for t in toks:
@@ -1241,6 +1261,8 @@ def check_names(text, options=None):
                     k += 1
                 base = _base_type(ttoks)
                 mems, where = _memory_prefixes(section, flags, pou, addr, struct > 0)
+                if base in ign_types or (struct > 0 and not check_members):
+                    mems = None
                 if mems is not None:
                     tps = TYPE_PREFIX.get(base, [""]) if base else [""]
                     tname = base if (base and base in TYPE_PREFIX) else "complex type"
@@ -1248,6 +1270,8 @@ def check_names(text, options=None):
                     for nm in names:
                         name = nm.v
                         if name in ignore:
+                            continue
+                        if ign_prefixes and any(_has_ignored_prefix(name, x) for x in ign_prefixes):
                             continue
                         if section in _INTERFACE and not struct and _ALLCAPS.match(name):
                             if o["terminal_code_check"]:
@@ -1257,11 +1281,11 @@ def check_names(text, options=None):
                                            % (name, section, err))
                                     issues.append((nm.pos, len(name), msg))
                             continue
-                        ok = any(name.startswith(p) and len(name) > len(p) and name[len(p)].isupper()
+                        ok = any(name.startswith(p) and len(name) > len(p) and (name[len(p)].isupper() or name[len(p)].isdigit())
                                  for p in allowed)
                         if not ok:
                             shown = " or ".join("'%s'" % p if p else "a capital letter" for p in allowed)
-                            msg = ("%s  [%s, %s]\nexpected prefix %s followed by a capital letter"
+                            msg = ("%s  [%s, %s]\nexpected prefix %s followed by a capital letter or digit"
                                    "\nsuggestion: %s") % (name, where, tname, shown, _suggest(name, allowed[0]))
                             issues.append((nm.pos, len(name), msg))
                 depth = 0

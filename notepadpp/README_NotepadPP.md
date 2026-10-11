@@ -98,7 +98,7 @@ Examples: `sbReset`, `ibReset`, `tbReset`, `trValue`, `gciMaxCount`, `sMotor` (F
 - Runs automatically after **StructuredText_Format**; run **StructuredText_CheckNames** to check without formatting.
 - `MEMORY_PREFIX` and `TYPE_PREFIX` near the top of `StructuredText_Format.py` hold the table – edit them to change the rules.
 - `WSTRING` → `s` and `WCHAR` → `c` are assumptions (not in the table). TOD, DT, POINTER etc. are treated as complex (memory prefix only).
-- Options: `naming_check`, `check_naming_after_format`, `naming_indicator_style` (`thick` / `plain` / `squiggle` underline, `box` filled, `outline`), `naming_indicator_color`, `naming_ignore` (names never flagged), `naming_report_console` (also list problems in the PythonScript console).
+- Options: `naming_check`, `check_naming_after_format`, `naming_indicator_style` (`thick` / `plain` / `squiggle` underline, `box` filled, `outline`), `naming_indicator_color`, `naming_ignore` (names never flagged), `naming_check_type_members` (default `True`; `False` skips members of TYPE / STRUCT / UNION), `naming_ignore_types` (data types never checked, case-insensitive, e.g. `["TOD", "ST_Data"]`), `naming_ignore_prefixes` (default `k`, `v`, `m`: `k`, `k_1`, `kMax`, `vSpeed`, `m2` are never flagged; the prefix must stand alone or be followed by a capital, digit or `_`), `naming_report_console` (also list problems in the PythonScript console).
 - **Terminal names:** in `VAR_INPUT`, `VAR_OUTPUT` and `VAR_IN_OUT` a name in ALL CAPITALS (e.g. `R`, `BA1`, `START`) always passes.
   Set `terminal_code_check` to `True` to also require a valid IEC PAS 63131 terminal code: first letter from
   `TERMINAL_FIRST` (A B F L P R S W X Y), then letters from `TERMINAL_NEXT` and digits 1-9 (e.g. `BA1`, `RS`, `XE`).

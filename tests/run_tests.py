@@ -76,7 +76,9 @@ for line in o40.splitlines():
 
 # 3. naming check
 print("naming")
-for fn, opts in (("naming.st", None), ("terminal_codes.st", None),
+for fn, opts in (("naming.st", None), ("terminal_codes.st", None), ("naming_prefixes.st", None),
+                 ("naming_types.st", {"naming_ignore_types": ["tod", "ST_Data"]}),
+                 ("naming.st", {"naming_check_type_members": False}),
                  ("terminal_codes.st", {"terminal_code_check": True})):
     text = read(os.path.join(SAMPLES, fn))
     lines = ["%d: %s" % (text.count("\n", 0, s) + 1, m.replace("\n", " | "))

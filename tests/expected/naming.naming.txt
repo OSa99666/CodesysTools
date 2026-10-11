@@ -1,11 +1,11 @@
-3: bAlarm2  [VAR_GLOBAL, BOOL] | expected prefix 'gb' or 'gx' followed by a capital letter | suggestion: gbAlarm2
-4: iStart  [AT %I, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter | suggestion: ibStart
-10: MAX_N  [VAR_GLOBAL CONSTANT, INT] | expected prefix 'gci' followed by a capital letter | suggestion: gciMaxN
-15: nSpeed  [VAR_INPUT, INT] | expected prefix 'ii' followed by a capital letter | suggestion: iiSpeed
-16: bRun  [VAR_INPUT, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter | suggestion: ibRun
-28: tonDelay  [VAR, complex type] | expected prefix 's' followed by a capital letter | suggestion: sTonDelay
-30: aBuf  [VAR, REAL] | expected prefix 'sr' followed by a capital letter | suggestion: srBuf
-33: sString  [VAR, STRING] | expected prefix 'ss' followed by a capital letter | suggestion: ssString
-35: sdtStamp  [VAR, complex type] | expected prefix 's' followed by a capital letter | suggestion: sStamp
-48: siY  [VAR in FUNCTION, INT] | expected prefix 'ti' followed by a capital letter | suggestion: tiY
-55: value  [STRUCT member, INT] | expected prefix 'i' followed by a capital letter | suggestion: iValue
+3: bAlarm2  [VAR_GLOBAL, BOOL] | expected prefix 'gb' or 'gx' followed by a capital letter or digit | suggestion: gbAlarm2
+4: iStart  [AT %I, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter or digit | suggestion: ibStart
+10: MAX_N  [VAR_GLOBAL CONSTANT, INT] | expected prefix 'gci' followed by a capital letter or digit | suggestion: gciMaxN
+15: nSpeed  [VAR_INPUT, INT] | expected prefix 'ii' followed by a capital letter or digit | suggestion: iiSpeed
+16: bRun  [VAR_INPUT, BOOL] | expected prefix 'ib' or 'ix' followed by a capital letter or digit | suggestion: ibRun
+28: tonDelay  [VAR, complex type] | expected prefix 's' followed by a capital letter or digit | suggestion: sTonDelay
+30: aBuf  [VAR, REAL] | expected prefix 'sr' followed by a capital letter or digit | suggestion: srBuf
+33: sString  [VAR, STRING] | expected prefix 'ss' followed by a capital letter or digit | suggestion: ssString
+35: sdtStamp  [VAR, complex type] | expected prefix 's' followed by a capital letter or digit | suggestion: sStamp
+48: siY  [VAR in FUNCTION, INT] | expected prefix 'ti' followed by a capital letter or digit | suggestion: tiY
+55: value  [STRUCT member, INT] | expected prefix 'i' followed by a capital letter or digit | suggestion: iValue
