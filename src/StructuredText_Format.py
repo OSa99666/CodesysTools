@@ -65,12 +65,21 @@ OPTIONS = {
     # Names that are one of these prefixes, or start with it followed by a capital letter,
     # digit or '_', are never flagged (k, k_1, kMaxSize, vSpeed, m2). Case sensitive;
     # "mode" is NOT exempt by "m".
-    "naming_ignore_prefixes": ["k", "v", "m"],
+    "naming_ignore_prefixes": ["k", "v", "m", "sm", "tm", "sv", "tv"],   # k=constant, v=vector, m=matrix, s/t = static/temp
     # Declarations of these data types are never checked (case-insensitive; the element
     # type for ARRAY OF). Standard or own types, e.g. ["TOD", "DT", "ST_Data", "FB_Timer"].
     "naming_ignore_types": [],
     # False = members of TYPE ... STRUCT / UNION declarations are not checked at all.
     "naming_check_type_members": True,
+    # UNION members are alternative views of the same memory: a bare type prefix (b, dw, w, ...)
+    # or a prefix + capital/digit is accepted whatever the member's type (b : tBits; dw : DWord).
+    "naming_union_views": True,
+    # A COMMENT containing {attribute 'noprefix'} (e.g.  //{attribute 'noprefix'}  - a real pragma
+    # gives compiler warnings) switches the name check off:
+    #   before any code            -> for the whole file / CODESYS object
+    #   behind STRUCT/UNION/VAR... -> for that block only (same line as the keyword)
+    # "" = feature disabled.
+    "naming_skip_attribute": "noprefix",
     "naming_report_console": False,  # also list problems in the PythonScript console
     "naming_indicator_id": 13,       # Scintilla indicator number (change if another plugin uses 13)
     # VAR_INPUT / VAR_OUTPUT / VAR_IN_OUT: names in ALL CAPITALS always pass the
@@ -1188,6 +1197,32 @@ def _has_ignored_prefix(name, prefix):
     return not rest or rest[0].isupper() or rest[0].isdigit() or rest[0] == "_"
 
 
+def _union_view_ok(name):
+    for lst in TYPE_PREFIX.values():
+        for p in lst:
+            if p and name.startswith(p) and (len(name) == len(p) or name[len(p)].isupper()
+                                             or name[len(p)].isdigit()):
+                return True
+    return False
+
+
+def _is_skip_marker(t, attr):
+    if t.kind not in ("lcomment", "bcomment"):
+        return False
+    body = " ".join(t.v.replace("/", " ").replace("(*", " ").replace("*)", " ").split()).lower()
+    return ("{attribute '%s'}" % attr).lower() in body
+
+
+def _skip_attribute_present(toks, attr):
+    """True if a skip marker comment appears before the first real code token."""
+    for t in toks:
+        if _is_skip_marker(t, attr):
+            return True
+        if t.kind not in ("ws", "nl", "lcomment", "bcomment", "pragma"):
+            return False
+    return False
+
+
 def check_names(text, options=None):
     """Return a list of (char_start, char_length, message) for badly named declarations."""
     o = dict(OPTIONS)
@@ -1202,9 +1237,19 @@ def check_names(text, options=None):
     for t in toks:
         t.pos = pos
         pos += len(t.v)
+    if o.get("naming_skip_attribute") and _skip_attribute_present(toks, o["naming_skip_attribute"]):
+        return []
+    marker_lines = set()
+    if o.get("naming_skip_attribute"):
+        marker_lines = set(text.count("\n", 0, t.pos) for t in toks
+                           if _is_skip_marker(t, o["naming_skip_attribute"]))
+
+    def _marked(tok):
+        return bool(marker_lines) and text.count("\n", 0, tok.pos) in marker_lines
     sig = [t for t in toks if t.kind not in ("ws", "nl", "lcomment", "bcomment", "pragma")]
     issues = []
-    pou, section, flags, struct = [], None, set(), 0
+    pou, section, flags, struct, aggr = [], None, set(), 0, []
+    var_skip, aggr_skip = False, []
     stop_words = set(["END_VAR", "END_STRUCT", "END_UNION"])
     i, n = 0, len(sig)
     while i < n:
@@ -1223,6 +1268,7 @@ def check_names(text, options=None):
             continue
         if u in VAR_KINDS:
             section, flags = u, set()
+            var_skip = _marked(t)
             i += 1
             while i < n and sig[i].kind == "ident" and sig[i].v.upper() in (
                     "CONSTANT", "RETAIN", "PERSISTENT", "NON_RETAIN"):
@@ -1231,14 +1277,20 @@ def check_names(text, options=None):
             continue
         if u == "END_VAR":
             section = None
+            var_skip = False
             i += 1
             continue
         if u in ("STRUCT", "UNION"):
             struct += 1
+            aggr.append(u)
+            aggr_skip.append(_marked(t))
             i += 1
             continue
         if u in ("END_STRUCT", "END_UNION"):
             struct = max(0, struct - 1)
+            if aggr:
+                aggr.pop()
+                aggr_skip.pop()
             i += 1
             continue
         if (section or struct) and t.kind == "ident" and u not in RESERVED:
@@ -1272,7 +1324,7 @@ def check_names(text, options=None):
                     k += 1
                 base = _base_type(ttoks)
                 mems, where = _memory_prefixes(section, flags, pou, addr, struct > 0)
-                if base in ign_types or (struct > 0 and not check_members):
+                if base in ign_types or (struct > 0 and not check_members) or var_skip or any(aggr_skip):
                     mems = None
                 if mems is not None:
                     tps = TYPE_PREFIX.get(base, [""]) if base else [""]
@@ -1283,6 +1335,8 @@ def check_names(text, options=None):
                         if name in ignore:
                             continue
                         if ign_prefixes and any(_has_ignored_prefix(name, x) for x in ign_prefixes):
+                            continue
+                        if o["naming_union_views"] and aggr and aggr[-1] == "UNION" and _union_view_ok(name):
                             continue
                         if section in _INTERFACE and not struct and _ALLCAPS.match(name):
                             if o["terminal_code_check"]:

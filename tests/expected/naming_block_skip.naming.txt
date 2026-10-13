@@ -1,0 +1,2 @@
+9: Gamma  [STRUCT member, INT] | expected prefix 'i' followed by a capital letter or digit | suggestion: iGamma
+17: Checked  [VAR, INT] | expected prefix 'si' followed by a capital letter or digit | suggestion: siChecked

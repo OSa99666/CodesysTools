@@ -1,3 +1,5 @@
 6: mode  [VAR, INT] | expected prefix 'si' followed by a capital letter or digit | suggestion: siMode
 7: kmax  [VAR, INT] | expected prefix 'si' followed by a capital letter or digit | suggestion: siKmax
 13: sb_x  [VAR, BOOL] | expected prefix 'sb' or 'sx' followed by a capital letter or digit | suggestion: sbSb_x
+21: tmp  [VAR, REAL] | expected prefix 'sr' followed by a capital letter or digit | suggestion: srTmp
+22: gmRot  [VAR, REAL] | expected prefix 'sr' followed by a capital letter or digit | suggestion: srGmRot

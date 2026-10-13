@@ -14,5 +14,11 @@ VAR
     k : INT;
     k_1 : INT;
     v : INT;
+    smRot : REAL;
+    tmRot : REAL;
+    svPos : REAL;
+    tvPos2 : REAL;
+    tmp : REAL;
+    gmRot : REAL;
 END_VAR
 END_FUNCTION_BLOCK

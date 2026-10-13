@@ -1,0 +1,2 @@
+7: Raw  [STRUCT member, INT] | expected prefix 'i' followed by a capital letter or digit | suggestion: iRaw
+8: foo  [STRUCT member, INT] | expected prefix 'i' followed by a capital letter or digit | suggestion: iFoo

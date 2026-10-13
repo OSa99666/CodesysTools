@@ -112,6 +112,10 @@ Name = `<memory prefix><type prefix><Capital letter>…` (tables `MEMORY_PREFIX`
   Optional `terminal_code_check`: must then be a valid IEC PAS 63131 terminal code
   (`TERMINAL_FIRST`: A B F L P R S W X Y; `TERMINAL_NEXT` letters; digits 1-9). All table
   entries are standard (the italics in the user's source table were only the header).
+- UNION members are access views (`b`, `dw`, `w` …): a bare type prefix or prefix + capital/digit passes
+  whatever the type (`naming_union_views`). comment `//{attribute 'noprefix'}` (not a pragma: compiler warns) before any code skips the whole name
+  check for that file/object, behind STRUCT/UNION/VAR for that block (`naming_skip_attribute`). Options `naming_ignore_prefixes` (k v m),
+  `naming_ignore_types`, `naming_check_type_members` also exist. A digit may follow the prefix.
 - Derived-name principle (ibReset → sbReset/tbReset) is a guideline, not checked.
 - Notepad++ marks problems with Scintilla indicator 13 (orange thick underline) + calltip on
   mouse dwell; status bar shows count and line numbers. CODESYS: warnings in the Messages

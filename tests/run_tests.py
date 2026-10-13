@@ -76,7 +76,7 @@ for line in o40.splitlines():
 
 # 3. naming check
 print("naming")
-for fn, opts in (("naming.st", None), ("terminal_codes.st", None), ("naming_prefixes.st", None),
+for fn, opts in (("naming.st", None), ("terminal_codes.st", None), ("naming_prefixes.st", None), ("naming_union.st", None), ("naming_noprefix.st", None), ("naming_block_skip.st", None),
                  ("naming_types.st", {"naming_ignore_types": ["tod", "ST_Data"]}),
                  ("naming.st", {"naming_check_type_members": False}),
                  ("terminal_codes.st", {"terminal_code_check": True})):
