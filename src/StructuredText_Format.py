@@ -448,6 +448,17 @@ def _is_function(name, nxt):
     return bool(m) and m.group(2) in TYPES and (m.group(1) is None or m.group(1) in TYPES)
 
 
+def _function_case(name, mode):
+    """Conversions follow the type spelling: INT_TO_LREAL -> Int_To_LReal, TO_LTIME -> To_LTime."""
+    m = RE_CONVERSION.match(name.upper())
+    if mode != "pascal" or not m:
+        return _apply_case(name, mode)
+    head = name.upper()[:m.start(2)]            # 'INT_TO_' | 'TO_' | 'TRUNC_'
+    src = head[:-len("_TO_")] if m.group(1) else None
+    pre = "%s_To_" % _apply_case(src, mode) if src else head[:1] + head[1:].lower()
+    return pre + _apply_case(m.group(2), mode)
+
+
 def _display(t, o, nxt=None):
     if t.kind == "ident":
         u = t.v.upper()
@@ -460,7 +471,7 @@ def _display(t, o, nxt=None):
         if u in TYPES:
             return _apply_case(t.v, o["type_case"])
         if _is_function(t.v, nxt):
-            return _apply_case(t.v, o["function_case"])
+            return _function_case(t.v, o["function_case"])
     elif t.kind == "literal":
         # typed literal: only the type prefix before '#' follows type_case (LTIME#1s -> LTime#1s)
         pre, sep, rest = t.v.partition("#")
