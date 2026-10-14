@@ -16,6 +16,7 @@ Usage (Python 3, standard library only):
     python st_twincat.py --check FILE_OR_FOLDER [...]  naming check only
     python st_twincat.py --no-check FILE_OR_FOLDER     format only
     python st_twincat.py --dry-run ...                 show what would change
+    python st_twincat.py --spell [--dict=NAME ...] ... spell check comments only (Hunspell)
 A folder (or a .plcproj / .sln file) is searched recursively.
 
 Naming problems are printed as  file(line,col): warning ST001: ...  so the
@@ -122,6 +123,20 @@ def check_xml(xml, o):
             yield line, col, _owner(xml, base), text.count("\n", 0, s) + 1, msg
 
 
+def spell_xml(xml, o):
+    """Yield (xml_line, col, owner, message) for misspelled words in comments."""
+    secs = list(RE_SECTION.finditer(xml))
+    code = "\n".join(m.group(3) for m in secs)
+    for m in secs:
+        text = m.group(3)
+        base = m.start(3)
+        for s, ln, msg in stf.check_spelling(text, o, code):
+            p = base + s
+            line = xml.count("\n", 0, p) + 1
+            col = p - (xml.rfind("\n", 0, p) + 1) + 1
+            yield line, col, _owner(xml, base), msg
+
+
 def collect(paths):
     files = []
     for p in paths:
@@ -139,6 +154,27 @@ def collect(paths):
     return files
 
 
+def spell_main(files, o):
+    n_warn = n_err = 0
+    for path in files:
+        try:
+            xml, _bom = _read(path)
+            for line, col, owner, msg in spell_xml(xml, o):
+                n_warn += 1
+                first, _, rest = msg.partition("\n")
+                print("%s(%d,%d): warning ST002: %s: %s - %s"
+                      % (path, line, col, owner, first, rest.replace("\n", "; ")))
+        except stf.SpellError as e:
+            print("%s(1,1): error ST003: %s" % (path, str(e).replace("\n", " ")))
+            return 1
+        except Exception as e:
+            n_err += 1
+            print("%s(1,1): error ST000: %s" % (path, e))
+    print("ST: %d file(s), %d misspelled word(s)%s"
+          % (len(files), n_warn, ", %d error(s)" % n_err if n_err else ""))
+    return 1 if n_err else 0
+
+
 def main(argv):
     args = [a for a in argv[1:] if not a.startswith("--")]
     flags = set(a for a in argv[1:] if a.startswith("--"))
@@ -146,6 +182,11 @@ def main(argv):
         print(__doc__)
         return 2
     o = _opts()
+    dicts = [a[7:] for a in flags if a.startswith("--dict=")]
+    if dicts:
+        o["spell_dictionaries"] = dicts
+    if "--spell" in flags:
+        return spell_main(collect(args), o)
     do_format = "--check" not in flags
     do_check = "--no-check" not in flags and o.get("naming_check", True)
     dry = "--dry-run" in flags

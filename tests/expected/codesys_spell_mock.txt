@@ -1,0 +1,5 @@
+I ST spelling: started, 2 ST objects found...
+W Spelling: FB_Valve, decl. line 3: valvs  [spelling] - suggestions: valve, valves
+W Spelling: FB_Valve, impl. line 1: wrod  [spelling] - suggestions: word
+W Spelling: FB_Valve, impl. line 1: here  [spelling] - suggestions: none
+I ST spelling: 3 misspelled word(s)

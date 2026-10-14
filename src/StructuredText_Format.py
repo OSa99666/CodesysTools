@@ -12,6 +12,7 @@ Can also be used from the command line for testing:
 Edit OPTIONS below to change the formatting style.
 """
 from __future__ import print_function
+import os
 import re
 import sys
 
@@ -86,6 +87,35 @@ OPTIONS = {
     # Hungarian check (terminal names). If True they must also be a valid
     # IEC PAS 63131 terminal code (see TERMINAL_FIRST / TERMINAL_NEXT).
     "terminal_code_check": False,
+
+    # --- Spell check of comments (Hunspell .dic + .aff files) ---------------------------
+    # Dictionaries are looked up by name in: spell_folders, the Notepad++/DSpellCheck Hunspell
+    # folder, %LOCALAPPDATA%\CODESYS\Script Commands\dictionaries, %LOCALAPPDATA%\STTools\dictionaries
+    # and a "dictionaries" folder next to this file. A full path (without .dic) also works.
+    # A word is correct if ANY listed dictionary accepts it.
+    # Backend: "windows" = the spelling engine built into Windows 8+ (no files; handles Norwegian
+    # compounds; also uses your Windows custom words), "hunspell" = the dictionary files below,
+    # "auto" = Hunspell if spell_dictionaries is filled in, otherwise Windows.
+    "spell_backend": "auto",
+    "spell_languages": ["en-US", "nb-NO"],   # Windows backend: a word is OK in ANY of these
+    "spell_python": "",              # CODESYS + Windows backend: python.exe for the helper process ("" = find it)
+    "spell_dictionaries": [],        # Hunspell backend, e.g. ["en_GB", "nb_NO"]
+    "spell_folders": [],             # extra folders to search for the dictionaries
+    "spell_user_words": [],          # extra accepted words, e.g. ["PLC", "Hunspell"] (case-insensitive)
+    "spell_user_dictionary": "user_words.txt",   # your own words, one per line (# = comment); a plain name is
+                                     # looked up in the dictionary folders (every copy found is used)
+    "check_spelling_after_format": False,   # Notepad++: also spell check after formatting
+    "spell_min_length": 3,           # shorter words are not checked
+    "spell_skip_allcaps": True,      # PLC, IEC, HMI ...
+    "spell_skip_identifiers": True,  # camelCase words (tMbState, sValve)
+    "spell_code_words": True,        # words found in the code's identifiers (Valve, Mb) are accepted
+    "spell_skip_code_comments": True,    # skip comment lines that look like code (:=, =>, ends in ;)
+    "spell_compounds": True,         # accept words glued from 2-4 valid words (Norwegian: arbeidsbord)
+    "spell_suggestions": 5,          # max. suggestions per word (0 = none)
+    "spell_indicator_id": 14,        # Scintilla indicator number (Notepad++)
+    "spell_indicator_style": "squiggle",
+    "spell_indicator_color": (220, 0, 0),
+    "spell_report_console": False,
 
     "indent_pou_body": False,        # indent code inside PROGRAM/FUNCTION_BLOCK/TYPE...
     "indent_case_items": True,       # indent statements under CASE labels
@@ -1376,6 +1406,741 @@ def check_names(text, options=None):
 
 
 # ---------------------------------------------------------------------------
+# Spell checker for comments (Hunspell .dic/.aff files, standard library only)
+# ---------------------------------------------------------------------------
+class SpellError(Exception):
+    """Dictionary missing / unreadable - the message explains what to do."""
+
+
+def _spell_codec(name):
+    import codecs
+    n = (name or "UTF-8").strip()
+    for cand in (n, n.replace("ISO8859-", "iso-8859-"), n.replace("microsoft-", "")):
+        try:
+            codecs.lookup(cand)
+            return cand
+        except LookupError:
+            pass
+    return "latin-1"
+
+
+def _read_bytes(path):
+    with open(path, "rb") as f:
+        raw = f.read()
+    return raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
+
+
+class _Hunspell(object):
+    """One Hunspell dictionary: suffix/prefix rules (also two-level suffixes and
+    prefix+suffix cross products). Compounding is handled by _Speller."""
+
+    def __init__(self, base):
+        self.words = {}
+        self.flagmode = "char"
+        self.try_chars = u""
+        self.needaffix = self.onlyic = self.forbidden = None
+        self.sfx_last, self.sfx_empty = {}, []
+        self.pfx_first, self.pfx_empty = {}, []
+        self._fs = {}
+        enc = "utf-8"
+        aff = base + ".aff"
+        if os.path.exists(aff):
+            raw = _read_bytes(aff)
+            m = re.search(br"^SET[ \t]+(\S+)", raw, re.M)
+            enc = _spell_codec(m.group(1).decode("ascii", "replace")) if m else "latin-1"
+            self._parse_aff(raw.decode(enc, "replace"))
+        self._parse_dic(_read_bytes(base + ".dic").decode(enc, "replace"))
+
+    def _flags(self, s):
+        r = self._fs.get(s)
+        if r is None:
+            if self.flagmode == "long":
+                r = frozenset(s[i:i + 2] for i in range(0, len(s), 2))
+            elif self.flagmode == "num":
+                r = frozenset(x for x in s.split(",") if x)
+            else:
+                r = frozenset(s)
+            self._fs[s] = r
+        return r
+
+    def _parse_aff(self, text):
+        cross = {}
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            p = line.split()
+            key = p[0]
+            if key == "FLAG" and len(p) > 1:
+                self.flagmode = "long" if p[1] == "long" else ("num" if p[1] == "num" else "char")
+            elif key == "TRY" and len(p) > 1:
+                self.try_chars = p[1]
+            elif key in ("NEEDAFFIX", "PSEUDOROOT") and len(p) > 1:
+                self.needaffix = p[1]
+            elif key == "ONLYINCOMPOUND" and len(p) > 1:
+                self.onlyic = p[1]
+            elif key == "FORBIDDENWORD" and len(p) > 1:
+                self.forbidden = p[1]
+            elif key in ("PFX", "SFX") and len(p) >= 4:
+                if len(p) == 4 and p[2] in ("Y", "N") and p[3].isdigit():
+                    cross[(key, p[1])] = (p[2] == "Y")        # rule group header
+                    continue
+                flag, strip, add = p[1], p[2], p[3]
+                cond = p[4] if len(p) > 4 else "."
+                strip = "" if strip == "0" else strip
+                cont = ""
+                if "/" in add:
+                    add, cont = add.split("/", 1)
+                add = "" if add == "0" else add
+                rx = None
+                if cond != ".":
+                    try:
+                        rx = re.compile(cond + "$" if key == "SFX" else "^" + cond, re.UNICODE)
+                    except re.error:
+                        continue
+                rule = (flag, cross.get((key, flag), True), strip, add, rx, self._flags(cont))
+                if key == "SFX":
+                    if add:
+                        self.sfx_last.setdefault(add[-1], []).append(rule)
+                    else:
+                        self.sfx_empty.append(rule)
+                else:
+                    if add:
+                        self.pfx_first.setdefault(add[0], []).append(rule)
+                    else:
+                        self.pfx_empty.append(rule)
+
+    def _parse_dic(self, text):
+        lines = text.splitlines()
+        start = 1 if lines and lines[0].strip().isdigit() else 0
+        join = "," if self.flagmode == "num" else ""
+        words = self.words
+        split_flags = re.compile(r"(?<!\\)/")
+        for line in lines[start:]:
+            if not line.strip() or line[0] == "\t":
+                continue
+            parts = split_flags.split(line.split()[0], 1)
+            w = parts[0].replace("\\/", "/")
+            f = parts[1] if len(parts) > 1 else ""
+            old = words.get(w)
+            words[w] = f if old is None else old + join + f
+
+    def _sfx(self, w):
+        out = []
+        for flag, cross, strip, add, rx, cont in list(self.sfx_last.get(w[-1:], ())) + self.sfx_empty:
+            if add and not w.endswith(add):
+                continue
+            base = (w[:len(w) - len(add)] if add else w) + strip
+            if base and (rx is None or rx.search(base)):
+                out.append((flag, cross, base, cont))
+        return out
+
+    def _pfx(self, w):
+        out = []
+        for flag, cross, strip, add, rx, cont in list(self.pfx_first.get(w[:1], ())) + self.pfx_empty:
+            if add and not w.startswith(add):
+                continue
+            base = strip + w[len(add):]
+            if base and (rx is None or rx.search(base)):
+                out.append((flag, cross, base, cont))
+        return out
+
+    def _has(self, stem, flag):
+        f = self.words.get(stem)
+        return f is not None and flag in self._flags(f)
+
+    def _affix_check(self, w):
+        f = self.words.get(w)
+        if f is not None:
+            s = self._flags(f)
+            if self.forbidden is not None and self.forbidden in s:
+                return False
+            if not ((self.needaffix is not None and self.needaffix in s) or
+                    (self.onlyic is not None and self.onlyic in s)):
+                return True
+        for flag, cross, base, cont in self._sfx(w):
+            if self._has(base, flag):
+                return True
+            for flag2, cross2, base2, cont2 in self._sfx(base):      # two-level suffix
+                if flag in cont2 and self._has(base2, flag2):
+                    return True
+        for pflag, pcross, pbase, pcont in self._pfx(w):
+            if self._has(pbase, pflag):
+                return True
+            if pcross:                                              # prefix + suffix
+                for flag, cross, base, cont in self._sfx(pbase):
+                    f = self.words.get(base)
+                    if cross and f is not None:
+                        s = self._flags(f)
+                        if pflag in s and flag in s:
+                            return True
+        return False
+
+    def check(self, w):
+        if self._affix_check(w):
+            return True
+        low = w.lower()
+        if w == low:
+            return False
+        if w.isupper():
+            return self._affix_check(low) or self._affix_check(low[:1].upper() + low[1:])
+        if w[:1].isupper() and w[1:] == low[1:]:
+            return self._affix_check(low)
+        return False
+
+
+class _Speller(object):
+    def __init__(self, dicts, compounds=True):
+        self.dicts = dicts
+        self.compounds = compounds
+        self._memo = {}
+
+    def plain(self, w):
+        r = self._memo.get(w)
+        if r is None:
+            r = any(d.check(w) for d in self.dicts)
+            self._memo[w] = r
+        return r
+
+    def _compound(self, w, parts):
+        """Words glued from 2-4 valid words, optionally with a linking s/e (Norwegian)."""
+        if parts < 2:
+            return False
+        for i in range(3, len(w) - 2):
+            head, tail = w[:i], w[i:]
+            if not (self.plain(head) or (head[-1] in u"se" and len(head) > 3 and self.plain(head[:-1]))):
+                continue
+            if self.plain(tail) or self._compound(tail, parts - 1):
+                return True
+        return False
+
+    def check(self, w):
+        if self.plain(w):
+            return True
+        if w.endswith(u"'s") and self.plain(w[:-2]):
+            return True
+        return self.compounds and 7 <= len(w) <= 40 and self._compound(w.lower(), 4)
+
+    def suggest(self, w, limit):
+        low = w.lower()
+        letters = u"".join(d.try_chars for d in self.dicts)
+        letters = u"".join(sorted(set(letters.lower()))) or u"abcdefghijklmnopqrstuvwxyz"
+        splits = [(low[:i], low[i:]) for i in range(len(low) + 1)]
+        cands = [a + b[1] + b[0] + b[2:] for a, b in splits if len(b) > 1]          # transposed
+        cands += [a + b[1:] for a, b in splits if b]                                  # deleted
+        cands += [a + c + b[1:] for a, b in splits if b for c in letters]            # replaced
+        cands += [a + c + b for a, b in splits for c in letters]                      # inserted
+        cands += [low[:i] + u" " + low[i:] for i in range(2, len(low) - 1)           # two words
+                  if self.plain(low[:i]) and self.plain(low[i:])]
+        out, seen = [], set([low])
+        for c in cands:
+            if c in seen:
+                continue
+            seen.add(c)
+            if u" " in c or self.plain(c):
+                out.append(c)
+                if len(out) >= limit:
+                    break
+        if w[:1].isupper():
+            out = [x[:1].upper() + x[1:] for x in out]
+        return out
+
+
+class _ComPtr(object):
+    """Minimal COM interface pointer driven through ctypes (vtable calls, no packages)."""
+
+    def __init__(self, address):
+        self.addr = address
+
+    def call(self, index, argtypes, *args):
+        import ctypes
+        vtbl = ctypes.cast(self.addr, ctypes.POINTER(ctypes.c_void_p))[0]
+        fn = ctypes.cast(vtbl, ctypes.POINTER(ctypes.c_void_p))[index]
+        proto = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, *argtypes)
+        return proto(fn)(self.addr, *args)
+
+    def release(self):
+        if self.addr:
+            self.call(2, [])
+            self.addr = None
+
+
+class _WinSpeller(object):
+    """The spelling engine of Windows (ISpellChecker, Windows 8+): the same dictionaries as
+    Word/Edge/Notepad, including the Windows custom word list. Norwegian compounds are handled
+    by Windows itself.
+
+    Text is handed to Windows either as c_wchar_p (mode 1) or as UTF-16 buffers (mode 2); some
+    hosts (an interactive CODESYS session) fail on the first, so mode 2 is tried as a fallback."""
+    CLSID_FACTORY = "{7AB36653-1796-484B-BDFA-E74F1DB7C1DC}"
+    IID_FACTORY = "{8E018A9D-2415-4677-BF08-794EA61F94BB}"
+    MODES = (False, True)                       # string args first, UTF-16 buffers as fallback
+
+    def __init__(self, languages):
+        import ctypes
+        self.ct = ctypes
+        self.factory, self.checkers, self._memo = None, [], {}
+        self.step, errors = "start", []
+        if not hasattr(ctypes, "windll"):
+            raise SpellError("The Windows spelling backend only works on Windows.")
+        for use_buf in self.MODES:
+            self.use_buf = use_buf
+            self.wt = ctypes.c_void_p if use_buf else ctypes.c_wchar_p
+            try:
+                self._open(languages)
+                return
+            except SpellError:
+                raise
+            except Exception as e:
+                errors.append("%s mode: step '%s': %s: %s"
+                              % ("buffer" if use_buf else "string", self.step, e.__class__.__name__, e))
+                try:
+                    self.close()
+                except Exception:
+                    pass
+        raise SpellError("The Windows spelling backend failed.\n" + "\n".join(errors))
+
+    def _w(self, text):
+        if not isinstance(text, type(u"")):
+            try:
+                text = text.decode("utf-8")
+            except Exception:
+                text = type(u"")(text)
+        return self.ct.create_unicode_buffer(text) if self.use_buf else self.ct.c_wchar_p(text)
+
+    def _guid(self, text):
+        import struct
+        h = text.strip("{}").replace("-", "")
+        tail = bytes(bytearray(int(h[i:i + 2], 16) for i in range(16, 32, 2)))
+        return self.ct.create_string_buffer(struct.pack("<IHH", int(h[:8], 16), int(h[8:12], 16),
+                                                        int(h[12:16], 16)) + tail, 16)
+
+    def _open(self, languages):
+        ct = self.ct
+        self.step = "load ole32"
+        self.ole = ct.windll.ole32
+        self.step = "CoInitializeEx"
+        self.ole.CoInitializeEx(None, 2)           # per thread; harmless if already initialised
+        self.step = "build GUIDs"
+        clsid, iid = self._guid(self.CLSID_FACTORY), self._guid(self.IID_FACTORY)
+        ptr = ct.c_void_p()
+        self.step = "CoCreateInstance"
+        hr = self.ole.CoCreateInstance(clsid, None, 1, iid, ct.byref(ptr))
+        if hr != 0 or not ptr.value:
+            raise SpellError("The Windows spelling service is not available (needs Windows 8 or later)."
+                             " HRESULT %s" % hex(hr & 0xffffffff))
+        self.factory = _ComPtr(ptr.value)
+        missing = []
+        for lang in languages:
+            self.step = "language " + lang
+            ok = ct.c_int(0)
+            self.factory.call(4, [self.wt, ct.POINTER(ct.c_int)], self._w(lang), ct.byref(ok))
+            if not ok.value:
+                missing.append(lang)
+                continue
+            chk = ct.c_void_p()
+            self.factory.call(5, [self.wt, ct.POINTER(ct.c_void_p)], self._w(lang), ct.byref(chk))
+            if chk.value:
+                self.checkers.append(_ComPtr(chk.value))
+        self.step = "check languages"
+        if missing or not self.checkers:
+            have = ", ".join(self.supported())
+            self.close()
+            raise SpellError("Windows has no spelling dictionary for: %s\n\nInstalled: %s\n\n"
+                             "Add the language in Windows Settings > Time & language > Language & region."
+                             % (", ".join(missing) or "(no language configured)", have or "none"))
+
+    def _strings(self, enum_ptr, limit):
+        ct, out = self.ct, []
+        enum = _ComPtr(enum_ptr)
+        try:
+            while len(out) < limit:
+                s, got = ct.c_void_p(), ct.c_ulong(0)
+                hr = enum.call(3, [ct.c_ulong, ct.POINTER(ct.c_void_p), ct.POINTER(ct.c_ulong)],
+                               1, ct.byref(s), ct.byref(got))
+                if hr != 0 or not got.value:
+                    break
+                out.append(ct.wstring_at(s.value))
+                self.ole.CoTaskMemFree(ct.c_void_p(s.value))
+        finally:
+            enum.release()
+        return out
+
+    def supported(self):
+        ct = self.ct
+        enum = ct.c_void_p()
+        self.factory.call(3, [ct.POINTER(ct.c_void_p)], ct.byref(enum))
+        return self._strings(enum.value, 200) if enum.value else []
+
+    def plain(self, w):
+        r = self._memo.get(w)
+        if r is None:
+            r = False
+            for chk in self.checkers:
+                errs = self.ct.c_void_p()
+                chk.call(4, [self.wt, self.ct.POINTER(self.ct.c_void_p)], self._w(w), self.ct.byref(errs))
+                if not errs.value:
+                    r = True
+                    break
+                enum = _ComPtr(errs.value)
+                err = self.ct.c_void_p()
+                hr = enum.call(3, [self.ct.POINTER(self.ct.c_void_p)], self.ct.byref(err))   # IEnumSpellingError::Next
+                if hr == 0 and err.value:
+                    _ComPtr(err.value).release()
+                else:                                   # S_FALSE: no spelling error in this language
+                    r = True
+                enum.release()
+                if r:
+                    break
+            self._memo[w] = r
+        return r
+
+    check = plain
+
+    def suggest(self, w, limit):
+        out = []
+        for chk in self.checkers:
+            enum = self.ct.c_void_p()
+            chk.call(5, [self.wt, self.ct.POINTER(self.ct.c_void_p)], self._w(w), self.ct.byref(enum))
+            if enum.value:
+                for x in self._strings(enum.value, limit):
+                    if x not in out:
+                        out.append(x)
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
+    def close(self):
+        for chk in self.checkers:
+            chk.release()
+        self.checkers = []
+        if getattr(self, "factory", None):
+            self.factory.release()
+            self.factory = None
+
+
+def _find_python(o):
+    """python.exe used for the Windows spelling helper process (CODESYS/IronPython only)."""
+    cfg = o.get("spell_python")
+    if cfg:
+        if os.path.exists(cfg):
+            return cfg
+        raise SpellError("spell_python does not exist: %s" % cfg)
+    env = os.environ.get
+    cands = [os.path.join(d.strip('"'), "python.exe") for d in (env("PATH") or "").split(os.pathsep) if d.strip()]
+    for root in (env("LOCALAPPDATA"), env("ProgramFiles"), "C:\\"):
+        if root:
+            base = os.path.join(root, "Programs", "Python") if root == env("LOCALAPPDATA") else root
+            try:
+                names = sorted(os.listdir(base), reverse=True)
+            except OSError:
+                names = []
+            cands += [os.path.join(base, n, "python.exe") for n in names if n.lower().startswith("python")]
+    for c in cands:
+        if "WindowsApps" not in c and os.path.isfile(c):
+            return c
+    raise SpellError("The Windows spelling check inside CODESYS needs Python 3 (python.exe) installed.\n"
+                     "Install it, set 'spell_python' to its full path, or use the Hunspell backend.")
+
+
+class _WinProcSpeller(object):
+    """The Windows speller in a separate Python process. Used inside CODESYS (IronPython), where
+    calling the COM interfaces in-process crashes the host. Talks a line protocol with
+    'python StructuredText_Format.py --winspell LANGS'."""
+
+    def __init__(self, languages, python):
+        self.langs = ",".join(languages)
+        self._memo = {}
+        script = os.path.abspath(__file__)
+        if script.lower().endswith((".pyc", ".pyo")):
+            script = script[:-1]
+        self.net = (sys.platform == "cli")
+        if self.net:
+            import clr  # noqa: F401
+            from System.Diagnostics import Process, ProcessStartInfo
+            from System.Text import UTF8Encoding
+            psi = ProcessStartInfo()
+            psi.FileName = python
+            psi.Arguments = '"%s" --winspell %s' % (script, self.langs)
+            psi.UseShellExecute = False
+            psi.CreateNoWindow = True
+            psi.RedirectStandardInput = True
+            psi.RedirectStandardOutput = True
+            enc = UTF8Encoding(False)
+            psi.StandardOutputEncoding = enc
+            self.p = Process.Start(psi)
+            self.sin, self.sout = self.p.StandardInput, self.p.StandardOutput
+        else:
+            import subprocess
+            self.p = subprocess.Popen([python, script, "--winspell", self.langs],
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        first = self._ask(None)
+        self._send("N")                              # no-op: absorbs a byte-order mark on the first line
+        if first != "READY":
+            self.shutdown()
+            raise SpellError(first[4:] if (first or "").startswith("ERR\t") else
+                             "The Windows spelling helper process did not start: %s" % first)
+
+    def _send(self, line):
+        if self.net:
+            self.sin.Write(line + "\n")
+            self.sin.Flush()
+        else:
+            self.p.stdin.write((line + "\n").encode("ascii"))
+            self.p.stdin.flush()
+
+    def _ask(self, line):
+        """Send one line (None = nothing) and return the reply line, or '' if the helper died."""
+        try:
+            if line is not None:
+                self._send(line)
+            if self.net:
+                reply = self.sout.ReadLine()
+                return reply if reply is not None else ""
+            return self.p.stdout.readline().decode("utf-8").rstrip("\r\n")
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _hex(word):
+        import binascii
+        if not isinstance(word, type(u"")):
+            try:
+                word = word.decode("utf-8")
+            except Exception:
+                word = type(u"")(word)
+        return binascii.hexlify(word.encode("utf-8")).decode("ascii")      # the pipe only carries ASCII
+
+    def plain(self, w):
+        r = self._memo.get(w)
+        if r is None:
+            reply = self._ask("C\t" + self._hex(w))
+            if reply not in ("OK", "BAD"):
+                raise SpellError("The Windows spelling helper process stopped unexpectedly.")
+            r = self._memo[w] = (reply == "OK")
+        return r
+
+    check = plain
+
+    def suggest(self, w, limit):
+        reply = self._ask("S\t%s\t%d" % (self._hex(w), limit))
+        return [x for x in reply.split("\t") if x][:limit]
+
+    def close(self):
+        pass                                        # stays alive for the next call; see close_spellers()
+
+    def shutdown(self):
+        try:
+            self._ask("Q")
+            if self.net:
+                self.sin.Close()
+            else:
+                self.p.stdin.close()
+        except Exception:
+            pass
+
+
+def _spell_state():
+    import types
+    st = sys.modules.get("_st_spell_state")
+    if st is None:
+        st = types.ModuleType("_st_spell_state")
+        st.cache = {}
+        sys.modules["_st_spell_state"] = st
+    if not hasattr(st, "procs"):
+        st.procs = {}
+    return st
+
+
+def close_spellers():
+    """Stop helper processes (CODESYS). Call when a run is finished."""
+    st = _spell_state()
+    for sp in list(st.procs.values()):
+        sp.shutdown()
+    st.procs.clear()
+
+
+def _winspell_server(langs):
+    """Helper process: answers spelling requests from the CODESYS adapter (see _WinProcSpeller)."""
+    import io
+    if getattr(sys.stdin, "buffer", None) is not None:       # Python 3
+        inp = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", newline="\n")
+        outw = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", newline="\n", write_through=True)
+
+        def out(text):
+            outw.write(text + "\n")
+            outw.flush()
+    else:                                                    # Python 2
+        inp = (ln.decode("utf-8") for ln in sys.stdin)
+
+        def out(text):
+            sys.stdout.write(text.encode("utf-8") + "\n")
+            sys.stdout.flush()
+    try:
+        sp = _WinSpeller([x for x in langs.split(",") if x])
+    except SpellError as e:
+        out("ERR\t" + str(e).replace("\n", " "))
+        return
+    out("READY")
+    import binascii
+    for line in inp:
+        parts = line.lstrip(u"\ufeff").rstrip("\r\n").split("\t")
+        if parts[0] == "C" and len(parts) > 1:
+            out("OK" if sp.plain(binascii.unhexlify(parts[1]).decode("utf-8")) else "BAD")
+        elif parts[0] == "S" and len(parts) > 2:
+            out("\t".join(sp.suggest(binascii.unhexlify(parts[1]).decode("utf-8"), int(parts[2]))))
+        elif parts[0] == "Q":
+            break
+    sp.close()
+
+
+def _spell_folders(o):
+    env = os.environ.get
+    folders = list(o.get("spell_folders") or [])
+    for root, parts in ((env("APPDATA"), ("Notepad++", "plugins", "config", "Hunspell")),
+                        (env("ProgramFiles"), ("Notepad++", "plugins", "config", "Hunspell")),
+                        (env("LOCALAPPDATA"), ("CODESYS", "Script Commands", "dictionaries")),
+                        (env("LOCALAPPDATA"), ("STTools", "dictionaries"))):
+        if root:
+            folders.append(os.path.join(root, *parts))
+    here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
+    folders.append(os.path.join(here, "dictionaries"))
+    return folders
+
+
+def get_speller(o):
+    backend = o.get("spell_backend", "auto")
+    names = list(o.get("spell_dictionaries") or [])
+    if backend == "windows" or (backend == "auto" and not names):
+        langs = list(o.get("spell_languages") or [])
+        if sys.platform == "cli":                    # CODESYS/IronPython: COM in-process crashes the host
+            st = _spell_state()
+            key = ",".join(langs)
+            sp = st.procs.get(key)
+            if sp is None:
+                sp = st.procs[key] = _WinProcSpeller(langs, _find_python(o))
+            return sp
+        return _WinSpeller(langs)
+    if not names:
+        raise SpellError("No spelling dictionary configured (spell_backend is \"hunspell\").\n\n"
+                         "Set 'spell_dictionaries' in OPTIONS (top of StructuredText_Format.py), e.g.\n"
+                         "    \"spell_dictionaries\": [\"en_GB\", \"nb_NO\"],\n"
+                         "and put the matching Hunspell files (en_GB.dic + en_GB.aff ...) in one of\n"
+                         "the folders listed in 'spell_folders'.")
+    folders = _spell_folders(o)
+    bases, missing = [], []
+    for name in names:
+        n = name[:-4] if name.lower().endswith((".dic", ".aff")) else name
+        cands = [n] if (os.path.isabs(n) or "/" in n or os.sep in n) else [os.path.join(f, n) for f in folders]
+        for c in cands:
+            if os.path.exists(c + ".dic"):
+                bases.append(c)
+                break
+        else:
+            missing.append(name)
+    if missing:
+        raise SpellError("Spelling dictionary not found: %s\n\nSearched in:\n  %s\n\n"
+                         "Each dictionary is a pair NAME.dic + NAME.aff (Hunspell format)."
+                         % (", ".join(missing), "\n  ".join(folders)))
+    st = _spell_state()
+    key = (tuple(bases), bool(o.get("spell_compounds", True)))
+    sp = st.cache.get(key)
+    if sp is None:
+        try:
+            sp = _Speller([_Hunspell(b) for b in bases], key[1])
+        except (IOError, OSError) as e:
+            raise SpellError("Cannot read spelling dictionary: %s" % e)
+        st.cache[key] = sp
+    return sp
+
+
+RE_SPELL_WORD = re.compile(u"[\\w'’]+", re.UNICODE)
+RE_SPELL_MASK = re.compile(u"\\{[^}]*\\}|\\w+://\\S+|\\S+@\\S+\\.\\S+|\\b\\w+(?:\\.\\w+)+\\b|[A-Za-z]:\\\\\\S+",
+                           re.UNICODE)
+RE_CODEISH = re.compile(r":=|=>|;\s*(?:\*\)|\*/)?\s*$")
+RE_IDENT_PART = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
+
+
+def _identifier_words(toks, into):
+    for t in toks:
+        if t.kind == "ident":
+            into.add(t.v.lower())
+            for part in RE_IDENT_PART.findall(t.v):
+                into.add(part.lower())
+
+
+def check_spelling(text, options=None, extra_code=None):
+    """Return a list of (char_start, char_length, message) for misspelled words in
+    comments. extra_code: more ST text whose identifiers count as known words.
+    Raises SpellError if the dictionaries cannot be loaded."""
+    o = dict(OPTIONS)
+    if options:
+        o.update(options)
+    speller = get_speller(o)
+    try:
+        return _check_spelling(text, o, extra_code, speller)
+    finally:
+        if hasattr(speller, "close"):
+            speller.close()
+
+
+def _check_spelling(text, o, extra_code, speller):
+    toks = tokenize(text)
+    pos = 0
+    for t in toks:
+        t.pos = pos
+        pos += len(t.v)
+    known = set(w.lower() for w in (o.get("spell_user_words") or []))
+    uname = o.get("spell_user_dictionary")
+    if uname:
+        paths = [uname] if os.path.isabs(uname) else [os.path.join(f, uname) for f in _spell_folders(o)]
+        for path in paths:
+            if os.path.isfile(path):
+                with open(path, "rb") as f:
+                    for ln in f.read().decode("utf-8", "replace").lstrip(u"\ufeff").splitlines():
+                        if ln.strip() and not ln.startswith("#"):
+                            known.add(ln.strip().lower())
+    if o["spell_code_words"]:
+        _identifier_words(toks, known)
+        if extra_code:
+            _identifier_words(tokenize(extra_code), known)
+    min_len = int(o["spell_min_length"])
+    cache, issues = {}, []
+    for t in toks:
+        if t.kind not in ("lcomment", "bcomment"):
+            continue
+        for lm in re.finditer(r"[^\r\n]+", t.v):
+            line, base = lm.group(0), t.pos + lm.start()
+            if o["spell_skip_code_comments"] and RE_CODEISH.search(line):
+                continue
+            masks = [(m.start(), m.end()) for m in RE_SPELL_MASK.finditer(line)]
+            for wm in RE_SPELL_WORD.finditer(line):
+                a = wm.start()
+                if any(x <= a < y for x, y in masks):
+                    continue
+                raw = wm.group(0).replace(u"’", u"'")
+                word = raw.strip(u"'")
+                a += len(raw) - len(raw.lstrip(u"'"))
+                if len(word) < min_len or re.search(u"[\\d_]", word, re.UNICODE):
+                    continue
+                if o["spell_skip_identifiers"] and re.search(u"[a-z][A-Z]", word):
+                    continue
+                if o["spell_skip_allcaps"] and word.isupper():
+                    continue
+                if word.lower() in known:
+                    continue
+                ok = cache.get(word)
+                if ok is None:
+                    ok = cache[word] = speller.check(word)
+                if ok:
+                    continue
+                sugg = speller.suggest(word, int(o["spell_suggestions"])) if o["spell_suggestions"] else []
+                msg = "%s  [spelling]\nsuggestions: %s" % (word, ", ".join(sugg) if sugg else "none")
+                issues.append((base + a, len(word), msg))
+    return issues
+
+
+# ---------------------------------------------------------------------------
 # Notepad++ integration (PythonScript plugin)
 # ---------------------------------------------------------------------------
 try:
@@ -1415,6 +2180,7 @@ def format_current_document(options=None):
 
 # ---- naming indicator ------------------------------------------------------
 INDICATOR_ID = int(OPTIONS.get("naming_indicator_id", 13))
+SPELL_INDICATOR_ID = int(OPTIONS.get("spell_indicator_id", 14))
 
 
 def _state():
@@ -1423,6 +2189,7 @@ def _state():
     if st is None:
         st = types.ModuleType("_st_naming_state")
         st.msgs = {}
+        st.spell_msgs = {}
         st.hover = False
         sys.modules["_st_naming_state"] = st
     return st
@@ -1453,15 +2220,19 @@ def _indicator_style(name):
 def _on_dwell_start(args):
     try:
         p = args.get("position", -1)
-        if p < 0 or not editor.indicatorValueAt(INDICATOR_ID, p):
+        if p < 0:
             return
-        a, b = editor.wordStartPosition(p, True), editor.wordEndPosition(p, True)
-        word = editor.getTextRange(a, b)
-        if isinstance(word, bytes):
-            word = word.decode("utf-8", "replace")
-        msg = _state().msgs.get(notepad.getCurrentBufferID(), {}).get(word)
-        if msg:
-            editor.callTipShow(p, msg)
+        for ind, attr in ((INDICATOR_ID, "msgs"), (SPELL_INDICATOR_ID, "spell_msgs")):
+            if not editor.indicatorValueAt(ind, p):
+                continue
+            a, b = editor.wordStartPosition(p, True), editor.wordEndPosition(p, True)
+            word = editor.getTextRange(a, b)
+            if isinstance(word, bytes):
+                word = word.decode("utf-8", "replace")
+            msg = getattr(_state(), attr, {}).get(notepad.getCurrentBufferID(), {}).get(word)
+            if msg:
+                editor.callTipShow(p, msg)
+                return
     except Exception:
         pass
 
@@ -1481,28 +2252,30 @@ def _install_hover():
     st.hover = True
 
 
-def _fill(ranges):
+def _fill(ranges, ind=None):
     """Fill our indicator. Notepad++ changes the *current* indicator itself
     (smart highlighting runs on the GUI thread while this script runs), so the
     current indicator is set again right before every call, and the result is
     verified and repeated if Notepad++ got in between."""
+    ind = INDICATOR_ID if ind is None else ind
     for _attempt in range(5):
         for a, b in ranges:
-            editor.setIndicatorCurrent(INDICATOR_ID)
+            editor.setIndicatorCurrent(ind)
             editor.indicatorFillRange(a, b - a)
-        missing = [(a, b) for a, b in ranges if b > a and not editor.indicatorValueAt(INDICATOR_ID, a)]
+        missing = [(a, b) for a, b in ranges if b > a and not editor.indicatorValueAt(ind, a)]
         if not missing:
             return True
         ranges = missing
     return False
 
 
-def _clear():
+def _clear(ind=None):
+    ind = INDICATOR_ID if ind is None else ind
     for _attempt in range(3):
-        editor.setIndicatorCurrent(INDICATOR_ID)
+        editor.setIndicatorCurrent(ind)
         editor.indicatorClearRange(0, editor.getLength())
-        if editor.indicatorEnd(INDICATOR_ID, 0) in (0, editor.getLength()) and \
-                not editor.indicatorValueAt(INDICATOR_ID, 0):
+        if editor.indicatorEnd(ind, 0) in (0, editor.getLength()) and \
+                not editor.indicatorValueAt(ind, 0):
             return
 
 
@@ -1544,7 +2317,66 @@ def check_current_document(options=None):
     return lines
 
 
+def check_spelling_current_document(options=None):
+    """Underline misspelled words in comments (red squiggle). Returns 1-based line numbers.
+    Raises SpellError if no usable dictionary is configured."""
+    o = dict(OPTIONS)
+    if options:
+        o.update(options)
+    text, enc = _decode(editor.getText())
+    issues = check_spelling(text, o)
+    bpos = _char_to_byte_positions(text, enc, [s for s, _, _ in issues] +
+                                   [s + ln for s, ln, _ in issues])
+    editor.indicSetStyle(SPELL_INDICATOR_ID, _indicator_style(o["spell_indicator_style"]))
+    editor.indicSetFore(SPELL_INDICATOR_ID, tuple(o["spell_indicator_color"]))
+    try:
+        editor.indicSetAlpha(SPELL_INDICATOR_ID, 70)
+        editor.indicSetOutlineAlpha(SPELL_INDICATOR_ID, 255)
+        editor.indicSetUnder(SPELL_INDICATOR_ID, True)
+    except Exception:
+        pass
+    _clear(SPELL_INDICATOR_ID)
+    ranges, msgs, lines = [], {}, []
+    for s, ln, msg in issues:
+        ranges.append((bpos[s], bpos[s + ln]))
+        msgs[text[s:s + ln]] = msg
+        lines.append(text.count("\n", 0, s) + 1)
+    if ranges:
+        _fill(ranges, SPELL_INDICATOR_ID)
+    _state().spell_msgs[notepad.getCurrentBufferID()] = msgs
+    if issues:
+        _install_hover()
+    if o["spell_report_console"]:
+        from Npp import console
+        console.write("Spell check: %d misspelled word(s)\n" % len(issues))
+        for (s, ln, msg), line in zip(issues, lines):
+            console.write("  line %d: %s\n" % (line, msg.replace("\n", " | ")))
+    return lines
+
+
 def _cli(argv):
+    if "--winspell" in argv:
+        k = argv.index("--winspell")
+        _winspell_server(argv[k + 1] if k + 1 < len(argv) else "")
+        return
+    if "--spell" in argv:
+        import io
+        files = [a for a in argv[1:] if not a.startswith("--")]
+        o = dict(OPTIONS)
+        dicts = [a[7:] for a in argv if a.startswith("--dict=")]
+        if dicts:
+            o["spell_dictionaries"] = dicts
+        data = io.open(files[0], "r", encoding="utf-8", newline="").read() if files else sys.stdin.read()
+        try:
+            found = check_spelling(data, o)
+        except SpellError as e:
+            print("spell check: %s" % e)
+            return
+        for s, ln, msg in found:
+            line = data.count("\n", 0, s) + 1
+            col = s - (data.rfind("\n", 0, s) + 1) + 1
+            print("%d:%d  %s" % (line, col, msg.replace("\n", "  |  ")))
+        return
     if "--check" in argv:
         import io
         files = [a for a in argv[1:] if not a.startswith("--")]
@@ -1588,6 +2420,22 @@ def show_error(title):
     notepad.messageBox(msg, title)
 
 
+def run_spell_check():
+    """Underline misspelled comment words; report in the status bar. Returns the count."""
+    try:
+        lines = check_spelling_current_document()
+    except SpellError as e:
+        notepad.messageBox(str(e), "Structured Text - spell check")
+        return 0
+    if not lines:
+        set_status("Structured Text - spelling: OK")
+    else:
+        shown = ", ".join(str(x) for x in lines[:10]) + (" ..." if len(lines) > 10 else "")
+        set_status("Structured Text - spelling: %d misspelled word(s) on line %s - hover the underlined words"
+                   % (len(lines), shown))
+    return len(lines)
+
+
 def run_naming_check():
     lines = check_current_document()
     if OPTIONS["naming_check"]:
@@ -1606,6 +2454,8 @@ if __name__ == "__main__":
             format_current_document()
             if OPTIONS["check_naming_after_format"]:
                 run_naming_check()
+            if OPTIONS["check_spelling_after_format"]:
+                run_spell_check()
         except Exception:
             show_error("StructuredText_Format - error")
     else:

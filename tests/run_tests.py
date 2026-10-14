@@ -85,6 +85,55 @@ for fn, opts in (("naming.st", None), ("terminal_codes.st", None), ("naming_pref
              for s, ln, m in stf.check_names(text, opts)]
     golden(fn.replace(".st", ".strict" if opts else "") + ".naming.txt", "\n".join(lines) + "\n")
 
+# 3b. spell check (Hunspell fixtures in tests/dict: English test dictionary + latin-1 "Norwegian")
+print("spelling")
+DICT = os.path.join(ROOT, "tests", "dict")
+SPELL_OPTS = {"spell_dictionaries": [os.path.join(DICT, "test_en"), os.path.join(DICT, "test_nb")]}
+text = read(os.path.join(SAMPLES, "spelling.st"))
+lines = []
+for s_, ln, m in stf.check_spelling(text, SPELL_OPTS):
+    line = text.count("\n", 0, s_) + 1
+    col = s_ - (text.rfind("\n", 0, s_) + 1) + 1
+    check(text[s_:s_ + ln] == m.split("  ")[0], "spell: wrong range for %r" % m)
+    lines.append("%d:%d  %s" % (line, col, m.replace("\n", " | ")))
+golden("spelling.spell.txt", "\n".join(lines) + "\n")
+try:
+    stf.check_spelling(text, {"spell_dictionaries": ["no_such_dictionary"]})
+    failures.append("spell: missing dictionary not reported")
+except stf.SpellError:
+    pass
+only_en = stf.check_spelling("// arbeidsbord og feilstavet\n", {"spell_dictionaries": [os.path.join(DICT, "test_en")]})
+check(len(only_en) == 2, "spell: Norwegian words should fail with the English dictionary only")
+check(not stf.check_spelling("// arbeidsbord\n", SPELL_OPTS), "spell: compound/two dictionaries failed")
+check(not stf.check_spelling("// worker valve\n", dict(SPELL_OPTS, spell_user_words=["Worker"])), "spell: user words")
+if sys.platform == "win32":      # Windows spelling engine (en-US is installed on Windows 8+)
+    WIN_OPTS = {"spell_backend": "windows", "spell_languages": ["en-US"], "spell_dictionaries": []}
+    try:
+        res = stf.check_spelling("// the valve is wrong, the wrod is spelled right\n", WIN_OPTS)
+        check(len(res) == 1 and res[0][2].startswith("wrod"), "spell (Windows): expected only 'wrod', got %r" % (res,))
+        check("word" in res[0][2], "spell (Windows): no suggestion 'word'")
+    except stf.SpellError as e:
+        print("  (Windows spelling engine not available - skipped: %s)" % str(e).split("\n")[0])
+    try:                         # the helper-process variant that CODESYS uses (IronPython)
+        helper = stf._WinProcSpeller(["en-US"], stf._find_python({}))
+        try:
+            check(helper.check("valve") and not helper.check("wrod") and "word" in helper.suggest("wrod", 5),
+                  "spell (Windows helper process): wrong answers")
+            check(helper.check(u"café"), "spell (Windows helper process): non-ASCII word")
+        finally:
+            helper.shutdown()
+    except stf.SpellError as e:
+        print("  (Windows helper process not available - skipped: %s)" % str(e).split("\n")[0])
+    try:
+        stf.check_spelling("// x\n", dict(WIN_OPTS, spell_languages=["xx-ZZ"]))
+        failures.append("spell (Windows): unsupported language not reported")
+    except stf.SpellError:
+        pass
+check(len(stf.check_spelling("// ventilbrod\n", dict(SPELL_OPTS, spell_dictionaries=[os.path.join(DICT, "test_en")]))) == 1,
+      "spell: word must be flagged without user dictionary")
+check(not stf.check_spelling("// ventilbrod\n", dict(SPELL_OPTS, spell_dictionaries=["test_en"], spell_folders=[DICT])),
+      "spell: user_words.txt in the dictionaries folder not used")
+
 # 4. TwinCAT adapter
 print("twincat")
 import st_twincat  # noqa: E402
@@ -105,6 +154,17 @@ try:
     golden("FB_Valve.TcPOU", new)
 finally:
     shutil.rmtree(tmp)
+
+# 4b. TwinCAT spell check
+xml_sp = ('<TcPlcObject><POU Name="FB_X"><Declaration><![CDATA[FUNCTION_BLOCK FB_X\r\nVAR\r\n'
+          '    sbOpen : BOOL; // the valvs\r\nEND_VAR]]></Declaration><Implementation><ST><![CDATA[// wrod\r\n'
+          'sbOpen := TRUE;]]></ST></Implementation></POU></TcPlcObject>')
+SPELL_OPTS = {"spell_dictionaries": [os.path.join(ROOT, "tests", "dict", "test_en"),
+                                     os.path.join(ROOT, "tests", "dict", "test_nb")]}
+found = list(st_twincat.spell_xml(xml_sp, dict(st_twincat._opts(), **SPELL_OPTS)))
+check(len(found) == 2, "TwinCAT spell: expected 2 findings, got %r" % (found,))
+golden("twincat_spell.txt", "\n".join("%d:%d %s %s" % (f[0], f[1], f[2], f[3].replace("\n", " | "))
+                                      for f in found) + "\n")
 
 # 5. CODESYS adapter against a mock of the ScriptEngine API
 print("codesys (mock)")
@@ -175,10 +235,20 @@ golden("codesys_mock.txt",
        + gvl.textual_declaration.text + "\n----\n" + "\n".join("%s %s" % m for m in messages) + "\n")
 check(not any(s == "E" for s, _ in messages), "CODESYS mock reported errors: %r" % messages)
 
+del messages[:]
+fb.textual_declaration.text = "FUNCTION_BLOCK FB_Valve\r\nVAR\r\n    sbOpen : BOOL;  // the valvs\r\nEND_VAR"
+fb.textual_implementation.text = "// wrod here\r\nsbOpen := TRUE;"
+st_codesys.run_spell(P, Sys(), Sev, SPELL_OPTS)
+golden("codesys_spell_mock.txt", "\n".join("%s %s" % m for m in messages) + "\n")
+del messages[:]
+st_codesys.run_spell(P, Sys(), Sev, {"spell_dictionaries": [], "spell_backend": "hunspell"})
+check(any(sv == "E" and "No spelling dictionary" in t for sv, t in messages), "CODESYS spell: missing dictionary not reported")
+
 # 6. Python 2.7 / IronPython 2.7 compatibility (no f-strings etc.)
 print("py2 compatibility")
 for rel in ("src/StructuredText_Format.py", "codesys/st_codesys.py",
-            "notepadpp/StructuredText_CheckNames.py"):
+            "notepadpp/StructuredText_CheckNames.py", "notepadpp/StructuredText_SpellCheck.py",
+            "codesys/ST_SpellCheck.py"):
     import tokenize
     with io.open(os.path.join(ROOT, rel), "r", encoding="utf-8") as fh:
         for tok in tokenize.generate_tokens(fh.readline):

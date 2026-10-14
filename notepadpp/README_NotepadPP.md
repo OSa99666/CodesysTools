@@ -105,6 +105,51 @@ Examples: `sbReset`, `ibReset`, `tbReset`, `trValue`, `gciMaxCount`, `sMotor` (F
   Remove letters from those two tables to disallow them.
 - The derived-name principle (ibReset → sbReset, tbReset) is a design guideline and is not checked automatically.
 
+## 3b. Spell check of comments (Hunspell)
+
+Run **StructuredText_SpellCheck** (Plugins → Python Script → Scripts). Misspelled words in `//`, `(* *)` and
+`/* */` comments get a red squiggle; hover them for suggestions. The status bar shows the count and the line
+numbers. Code, strings and pragmas are never checked.
+
+**Two backends** (`spell_backend`):
+
+- `"windows"` – the spelling engine built into Windows 8+ (the one Word, Edge and Notepad use). No files to
+  install; it uses the languages added in *Windows Settings → Time & language*, handles Norwegian compound words
+  itself, and also accepts the words in your Windows custom dictionary. Choose the languages with
+  `"spell_languages": ["en-US", "nb-NO"]` (a word is correct if **any** of them accepts it). If a language
+  is not installed the message box lists the installed ones.
+- `"hunspell"` – dictionary files, see below.
+- `"auto"` (default) – Hunspell if `spell_dictionaries` is filled in, otherwise Windows.
+
+**Hunspell dictionaries.** Hunspell files, a pair `NAME.dic` + `NAME.aff` per language (e.g. `en_GB`, `nb_NO`; the
+LibreOffice dictionaries use this format, and so does DSpellCheck). Put them in one of these folders
+(searched in this order): `spell_folders` (your own list), `%APPDATA%\Notepad++\plugins\config\Hunspell`,
+`%ProgramFiles%\Notepad++\plugins\config\Hunspell`, `%LOCALAPPDATA%\CODESYS\Script Commands\dictionaries`,
+`%LOCALAPPDATA%\STTools\dictionaries`, or a `dictionaries` folder next to `StructuredText_Format.py`.
+Then name them in `StructuredText_Format.py`:
+
+```python
+"spell_dictionaries": ["en_GB", "nb_NO"],     # a full path (without .dic) also works
+```
+
+A word is accepted if **any** listed dictionary accepts it. Suffix/prefix rules of the `.aff` file are applied
+(plurals, -ed, -ing …). With `spell_compounds` (default on) words glued from 2-4 valid words are accepted too
+(`arbeidsbord`, with a linking *s* or *e*) – useful for Norwegian, but it also accepts some real typos.
+
+**What is skipped:** words shorter than `spell_min_length` (3), ALL-CAPS words (`spell_skip_allcaps`), camelCase and
+words with digits/underscores (`spell_skip_identifiers`), words that are part of an identifier in the code
+(`spell_code_words`, e.g. *Valve* from `sValve`), `{…}` pragmas, URLs, file names, `e.g.`, and comment lines that look
+like commented-out code (`:=`, `=>`, ending in `;` – `spell_skip_code_comments`).
+Your own words: create the text file `user_words.txt` (one word per line, `#` starts a comment) **in the
+`dictionaries` folder** next to the `.dic`/`.aff` files. It is read automatically (option `spell_user_dictionary`,
+default `user_words.txt`; a full path also works, and every copy found in the dictionary folders is used).
+For a few words `spell_user_words` (a list in the options) does the same.
+
+Other options: `spell_suggestions` (max. suggestions, 0 = none), `check_spelling_after_format` (run after every
+format), `spell_indicator_id` (14), `spell_indicator_style`, `spell_indicator_color`, `spell_report_console`.
+If no dictionary is configured or found, a message box tells you what to do (Hunspell: the folders that were searched).
+Windows backend: suggestions from all listed languages are mixed (the first language's come first).
+
 ### Automatic: format on save, check on open (optional)
 
 Add this to `%APPDATA%\Notepad++\plugins\config\PythonScript\scripts\startup.py`

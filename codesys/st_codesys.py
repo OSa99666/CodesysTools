@@ -110,6 +110,18 @@ def check_object(obj, has_decl, o):
     return out
 
 
+def spell_object(obj, has_decl, has_impl, o):
+    """Return list of (part, line, message) for misspelled comment words in one object."""
+    decl = obj.textual_declaration.text if has_decl else None
+    impl = obj.textual_implementation.text if has_impl else None
+    out = []
+    for part, text, other in (("decl.", decl, impl), ("impl.", impl, decl)):
+        if text:
+            for s, ln, msg in stf.check_spelling(text, o, other):
+                out.append((part, text.count("\n", 0, s) + 1, msg))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Entry points (need the ScriptEngine globals: projects, system, Severity...)
 # ---------------------------------------------------------------------------
@@ -121,6 +133,12 @@ def _write(system, severity, text, obj=None):
     except Exception:
         pass
     system.write_message(severity, text)
+
+
+def _traceback_tail(lines=8):
+    """Last lines of the current traceback on one line (shown in the Messages view)."""
+    import traceback
+    return " / ".join(x.strip() for x in traceback.format_exc().splitlines()[-lines:])
 
 
 def _confirm(system, text):
@@ -160,6 +178,44 @@ def run_format(projects, system, Severity, check_after=False):
            "ST Format: %d of %d ST objects reformatted." % (n_changed, n_obj))
     if check_after:
         run_check(projects, system, Severity)
+
+
+def run_spell(projects, system, Severity, options=None):
+    try:
+        _run_spell(projects, system, Severity, options)
+    finally:
+        stf.close_spellers()                      # stop the Windows spelling helper process, if any
+
+
+def _run_spell(projects, system, Severity, options=None):
+    proj = projects.primary
+    if proj is None:
+        _write(system, Severity.Error, "ST spelling: no project is open.")
+        return
+    o = _opts()
+    if options:
+        o.update(options)
+    items = list(iter_st_objects(proj))
+    _write(system, Severity.Information,
+           "ST spelling: started, %d ST objects found..." % len(items))
+    total = 0
+    for k, (obj, has_decl, has_impl) in enumerate(items, 1):
+        try:
+            for part, line, msg in spell_object(obj, has_decl, has_impl, o):
+                total += 1
+                first, _, rest = msg.partition("\n")
+                _write(system, Severity.Warning,
+                       "Spelling: %s, %s line %d: %s - %s"
+                       % (_path(obj), part, line, first, rest.replace("\n", "; ")), obj)
+        except stf.SpellError as e:
+            _write(system, Severity.Error, "ST spelling: %s" % str(e).replace("\n", " "))
+            return
+        except Exception as e:
+            _write(system, Severity.Error, "ST spelling: %s: %s  [%s]" % (_path(obj), e, _traceback_tail()), obj)
+        if k % 25 == 0:
+            _write(system, Severity.Information, "ST spelling: [%d/%d] ..." % (k, len(items)))
+    _write(system, Severity.Information,
+           "ST spelling: %s" % ("OK" if not total else "%d misspelled word(s)" % total))
 
 
 def run_check(projects, system, Severity):

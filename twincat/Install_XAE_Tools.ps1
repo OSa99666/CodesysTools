@@ -48,6 +48,8 @@ if (-not $Uninstall) {
         Arg = "`"$py`" `"`$(SolutionDir)`""; Dir = "`$(SolutionDir)"; Opt = 2; Src = "" }
     $tools += [pscustomobject]@{ Title = "$tag Check &names"; Cmd = $Python
         Arg = "`"$py`" --check `"`$(SolutionDir)`""; Dir = "`$(SolutionDir)"; Opt = 2; Src = "" }
+    $tools += [pscustomobject]@{ Title = "$tag Check &spelling"; Cmd = $Python
+        Arg = "`"$py`" --spell `"`$(SolutionDir)`""; Dir = "`$(SolutionDir)"; Opt = 2; Src = "" }
 }
 
 # --- write back -----------------------------------------------------------

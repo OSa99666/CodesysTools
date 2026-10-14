@@ -38,7 +38,9 @@ updating the scripts; `-Python <path>` selects the interpreter, `-Uninstall` rem
 | ST Format &solution | `C:\…\python.exe` | `"C:\Tools\ST\st_twincat.py" "$(SolutionDir)"` | `$(SolutionDir)` |
 | ST Check &names | `C:\…\python.exe` | `"C:\Tools\ST\st_twincat.py" --check "$(SolutionDir)"` | `$(SolutionDir)` |
 
-Tick **Use Output window** for all three. Find the Python path with `where python` in a command prompt.
+| ST Check &spelling | `C:\…\python.exe` | `"C:\Tools\ST\st_twincat.py" --spell "$(SolutionDir)"` | `$(SolutionDir)` |
+
+Tick **Use Output window** for all of them. Find the Python path with `where python` in a command prompt.
 
 Optional keyboard shortcut: **Tools → Options → Environment → Keyboard**, search for
 `Tools.ExternalCommand1` (2, 3 … in the order of the list) and assign e.g. `Ctrl+Alt+F`.
@@ -55,6 +57,13 @@ Naming problems appear in the **Output** window as
 The object name and *decl. line* tell you where to look in the PLC editor
 (double-clicking may open the file without jumping to the line).
 
+Spelling problems in comments appear as `…\FB_Valve.TcPOU(27,5): warning ST002: FB_Valve: wrod [spelling] - suggestions: word`.
+By default the **spelling engine of Windows** is used (`spell_languages`, default `en-US` and `nb-NO`; no files
+needed). For Hunspell instead, set `spell_dictionaries` (e.g. `["en_GB", "nb_NO"]`) in the copy of
+`StructuredText_Format.py` and put the files (`en_GB.dic` + `en_GB.aff`) in
+`%LOCALAPPDATA%\STTools\dictionaries\` (or pass `--dict=C:\path\en_GB` on the command line). The automatic install creates the External Tool; the other spell
+options are described in the Notepad++ README, section 3b.
+
 ## What gets formatted
 
 - The declaration and all ST implementations of one file – POU, methods, properties (Get/Set),
@@ -67,6 +76,7 @@ The object name and *decl. line* tell you where to look in the PLC editor
 ```
 python st_twincat.py C:\Projects\Machine\PLC1                 # format whole PLC project + check
 python st_twincat.py --check C:\Projects\Machine               # naming check only
+python st_twincat.py --spell --dict=C:\Dict\en_GB C:\Projects\Machine   # spell check comments only
 python st_twincat.py --dry-run C:\Projects\Machine             # list files that would change
 python st_twincat.py --no-check FB_Valve.TcPOU                 # format one file only
 ```

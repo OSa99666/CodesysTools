@@ -1,0 +1,15 @@
+1:29  wrod  [spelling] | suggestions: word
+5:48  flag  [spelling] | suggestions: none
+5:60  mispelling  [spelling] | suggestions: none
+6:27  valvs  [spelling] | suggestions: valve, valves
+9:4  See  [spelling] | suggestions: none
+9:51  details  [spelling] | suggestions: none
+10:20  Worke  [spelling] | suggestions: Work, Works, Worked, Worker
+10:35  unworkers  [spelling] | suggestions: none
+10:49  valveed  [spelling] | suggestions: valved
+11:4  Multi  [spelling] | suggestions: none
+12:9  commment  [spelling] | suggestions: comment
+13:4  second  [spelling] | suggestions: none
+13:12  chek  [spelling] | suggestions: check
+15:43  feilstavet  [spelling] | suggestions: none
+15:54  ventilbrod  [spelling] | suggestions: none

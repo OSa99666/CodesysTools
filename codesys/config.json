@@ -10,5 +10,11 @@
     "Desc": "Check Hungarian notation in all ST declarations",
     "Icon": "ST_CheckNames.ico",
     "Path": "ST_CheckNames.py"
+  },
+  {
+    "Name": "ST Spell check",
+    "Desc": "Spell check the comments of all ST objects (Hunspell dictionaries)",
+    "Icon": "ST_SpellCheck.ico",
+    "Path": "ST_SpellCheck.py"
   }
 ]

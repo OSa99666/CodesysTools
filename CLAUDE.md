@@ -121,6 +121,28 @@ Name = `<memory prefix><type prefix><Capital letter>…` (tables `MEMORY_PREFIX`
   mouse dwell; status bar shows count and line numbers. CODESYS: warnings in the Messages
   view. TwinCAT: `file(line,col): warning ST001: …` lines in the Output window.
 
+## Spell check spec (comments only)
+
+- `check_spelling()` in the core file; own Hunspell reader (`.dic` + `.aff`: SET/FLAG char|long|num, SFX/PFX with
+  conditions, cross products, two-level suffixes, NEEDAFFIX/ONLYINCOMPOUND/FORBIDDENWORD) – no third-party
+  packages, Python 2.7 compatible. Compound words are a heuristic (2-4 valid words, linking s/e), not the
+  Hunspell COMPOUND* rules. Dictionaries are named in `spell_dictionaries`, found via `spell_folders` + default
+  folders (see OPTIONS comment). Only `//`, `(* *)`, `/* */` comments are checked, never code/strings/pragmas.
+- Second backend `spell_backend` "windows" (`_WinSpeller`): ISpellChecker COM via `ctypes` vtable calls (no
+  packages), `spell_languages` default en-US + nb-NO; "auto" = Hunspell if `spell_dictionaries` set, else Windows.
+  User words: `user_words.txt` in the dictionary folders. **Never call the COM interfaces in-process under
+  IronPython/CODESYS: it crashed CODESYS in the interactive session** (headless runs worked, and
+  `CLSIDFromString` threw NullReference there). Inside CODESYS (`sys.platform == "cli"`) the Windows backend
+  therefore runs as a hidden helper process (`python StructuredText_Format.py --winspell LANGS`, `_WinProcSpeller`;
+  ASCII/hex line protocol because .NET 4.8 cannot set the child's stdin encoding and adds a BOM; python found via
+  `spell_python`/PATH; stopped by `close_spellers()` in `run_spell`). CPython (Notepad++, TwinCAT, tests) uses
+  `_WinSpeller` in-process.
+- Skipped: short words, ALL CAPS, camelCase/digits/underscore, words from code identifiers, `{…}`, URLs, file
+  names, code-like comment lines. Notepad++: indicator 14 (red squiggle) + hover tips; CODESYS: "ST Spell check"
+  button (Messages view); TwinCAT: `st_twincat.py --spell`, `warning ST002`.
+- Tests use hand-made fixtures in `tests/dict/` (English test dictionary + a latin-1 "Norwegian" one); no real
+  dictionary is checked into the repo. Real-dictionary behaviour is **not yet confirmed** by the user.
+
 ## Hard-won lessons (don't regress)
 
 - **Notepad++ UDL**: "Folding in code 1" matches *without* word separators – it broke
@@ -142,6 +164,15 @@ Name = `<memory prefix><type prefix><Capital letter>…` (tables `MEMORY_PREFIX`
   `//@@ST_SPLIT_n@@`, formatted once, split again. `<LineIds>` are not updated (user should
   re-save objects in XAE before debugging). `indent_pou_body` forced False in adapters because
   TwinCAT/CODESYS objects have no END_FUNCTION_BLOCK.
+
+- **Testing under IronPython without CODESYS:** CODESYS ships IronPython 2.7.12 in
+  `C:\Program Files\CODESYS <ver>\CODESYS\LacBinaries\GAC_MSIL\IronPython\…` and the stdlib in
+  `…\CODESYS\ScriptLib\4.1.0.0`. A PowerShell script can load `IronPython.dll` + `Microsoft.Dynamic/Scripting`
+  (`LoadFrom`), `[IronPython.Hosting.Python]::CreateEngine()`, add both folders plus `src/` to the search paths
+  and `Execute` Python code – this runs the real core under the real interpreter (formatter, Hunspell and the
+  Windows spell backend were verified this way).
+- When patching files from the shell tool, escape sequences like `\n` inside Python heredocs can arrive as real
+  newlines and break string literals – prefer the Edit tool for such lines and run `python -m py_compile`.
 
 ## Known limitations / ideas not done
 

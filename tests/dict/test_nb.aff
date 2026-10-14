@@ -1,0 +1,5 @@
+SET ISO8859-1
+TRY esianrtolcdugmphbyfvkwæøå
+FLAG long
+SFX S1 Y 1
+SFX S1 0 er .
