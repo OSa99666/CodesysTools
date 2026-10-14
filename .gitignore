@@ -1,3 +1,5 @@
 dist/
 __pycache__/
 *.pyc
+# your own spelling dictionaries and word lists (tests/dict is tracked)
+dictionaries/
