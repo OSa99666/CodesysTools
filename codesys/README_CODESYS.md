@@ -14,6 +14,7 @@ small adapter, `st_codesys.py`, and two toolbar buttons.
 | `ST_CheckNames.py` / `ST_CheckNames.ico` | Toolbar button: naming check only |
 | `ST_SpellCheck.py` / `ST_SpellCheck.ico` | Toolbar button: spell check of all comments (Hunspell dictionaries) |
 | `dictionaries\` | Your Hunspell files `NAME.dic` + `NAME.aff` and your own words in `user_words.txt` (one word per line) |
+| `ST_Codesys.ico` | Main icon of the plugin (for shortcuts / documentation) |
 | `config.json` | Toolbar button definitions |
 
 ## Installation

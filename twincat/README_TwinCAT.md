@@ -45,6 +45,9 @@ Tick **Use Output window** for all of them. Find the Python path with `where pyt
 Optional keyboard shortcut: **Tools → Options → Environment → Keyboard**, search for
 `Tools.ExternalCommand1` (2, 3 … in the order of the list) and assign e.g. `Ctrl+Alt+F`.
 
+XAE External Tools cannot show icons. The folder still contains `ST_TwinCAT.ico` and the function icons
+(`ST_Format.ico`, `ST_CheckNames.ico`, `ST_SpellCheck.ico`) for desktop shortcuts or documentation.
+
 ### How to use
 
 1. **Save first** (`Ctrl+Shift+S`) – the tool works on the files on disk.

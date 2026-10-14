@@ -105,6 +105,12 @@ Examples: `sbReset`, `ibReset`, `tbReset`, `trValue`, `gciMaxCount`, `sMotor` (F
   Remove letters from those two tables to disallow them.
 - The derived-name principle (ibReset → sbReset, tbReset) is a design guideline and is not checked automatically.
 
+### Toolbar buttons (optional)
+
+The folder contains icons `ST_Format.ico`, `ST_CheckNames.ico`, `ST_SpellCheck.ico` (and the plugin icon
+`ST_NotepadPP.ico`). In **Plugins → Python Script → Configuration**, select the script, click **Add** under
+*Toolbar* and pick the matching icon.
+
 ## 3b. Spell check of comments (Hunspell)
 
 Run **StructuredText_SpellCheck** (Plugins → Python Script → Scripts). Misspelled words in `//`, `(* *)` and
